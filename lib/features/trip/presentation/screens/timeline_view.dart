@@ -20,6 +20,7 @@ import 'package:new_tripple/features/trip/presentation/screens/schedule_edit_mod
 import 'package:new_tripple/features/trip/presentation/screens/route_edit_modal.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:new_tripple/shared/widgets/tripple_empty_state.dart';
+import 'package:new_tripple/features/trip/presentation/screens/expense_stats_screen.dart';
 
 class TimelineView extends StatefulWidget {
   final Trip trip;
@@ -346,6 +347,19 @@ class _TimelineViewState extends State<TimelineView> {
                         ),
                         Row(
                           children: [
+                            IconButton(
+                              icon: const Icon(
+                                Icons.attach_money,
+                                color: Colors.white,
+                                size: 24,
+                                shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
+                              ),
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(builder: (context) => ExpenseStatsScreen(trip: currentTrip))
+                                );
+                              },
+                            ),
                             IconButton(
                               icon: const Icon(
                                 Icons.print_rounded,

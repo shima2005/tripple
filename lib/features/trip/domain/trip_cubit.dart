@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:new_tripple/models/expense_item.dart';
 import 'package:new_tripple/models/step_detail.dart';
 import 'package:new_tripple/models/trip.dart';
 import 'package:new_tripple/models/schedule_item.dart';
@@ -276,9 +277,24 @@ class TripCubit extends Cubit<TripState> {
   Future<void> selectTrip(String tripId) async {
     try {
       emit(state.copyWith(status: TripStatus.loading));
+      
       final selectedTrip = state.allTrips.firstWhere((t) => t.id == tripId);
-      final items = await _tripRepository.fetchFullSchedule(tripId);
-      emit(state.copyWith(status: TripStatus.loaded, selectedTrip: selectedTrip, scheduleItems: items));
+      
+      // 並行してスケジュールと支出を取得
+      final results = await Future.wait([
+        _tripRepository.fetchFullSchedule(tripId),
+        _tripRepository.fetchExpenses(tripId),
+      ]);
+      
+      final items = results[0] as List<Object>;
+      final expenses = results[1] as List<ExpenseItem>;
+
+      emit(state.copyWith(
+        status: TripStatus.loaded, 
+        selectedTrip: selectedTrip, 
+        scheduleItems: items,
+        expenses: expenses, // 👈 Stateにセット
+      ));
     } catch (e) {
       emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
     }
@@ -806,4 +822,64 @@ class TripCubit extends Cubit<TripState> {
   }
 
   
+
+  // 💰 支出の追加・更新
+  Future<void> addOrUpdateExpense(String tripId, ExpenseItem expense) async {
+    try {
+      emit(state.copyWith(status: TripStatus.submitting));
+
+      // IDがない場合はクライアント側で生成 (State即時反映のため)
+      final expenseToSave = expense.id.isEmpty 
+          ? ExpenseItem(
+              id: const Uuid().v4(), 
+              title: expense.title, 
+              amount: expense.amount, 
+              currency: expense.currency, 
+              payerId: expense.payerId, 
+              payeeIds: expense.payeeIds, 
+              splitMode: expense.splitMode, 
+              customAmounts: expense.customAmounts, 
+              date: expense.date, 
+              category: expense.category, 
+              linkedScheduleId: expense.linkedScheduleId
+            ) 
+          : expense;
+
+      // Firestoreへ保存
+      await _tripRepository.addOrUpdateExpense(tripId, expenseToSave);
+
+      // ローカルStateを更新
+      final currentExpenses = List<ExpenseItem>.from(state.expenses);
+      final index = currentExpenses.indexWhere((e) => e.id == expenseToSave.id);
+      
+      if (index != -1) {
+        currentExpenses[index] = expenseToSave;
+      } else {
+        currentExpenses.insert(0, expenseToSave);
+        // 日付順ソート (新しい順)
+        currentExpenses.sort((a, b) => b.date.compareTo(a.date));
+      }
+
+      emit(state.copyWith(status: TripStatus.loaded, expenses: currentExpenses));
+    } catch (e) {
+      emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
+    }
+  }
+
+  // 💰 支出の削除
+  Future<void> deleteExpense(String tripId, String expenseId) async {
+    try {
+      emit(state.copyWith(status: TripStatus.submitting));
+      
+      // Repositoryにdeleteメソッドがある前提
+      await _tripRepository.deleteExpense(tripId, expenseId);
+      
+      final currentExpenses = List<ExpenseItem>.from(state.expenses);
+      currentExpenses.removeWhere((e) => e.id == expenseId);
+      
+      emit(state.copyWith(status: TripStatus.loaded, expenses: currentExpenses));
+    } catch (e) {
+      emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
+    }
+  } 
 }

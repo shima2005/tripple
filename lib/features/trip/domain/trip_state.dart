@@ -1,5 +1,7 @@
 import 'package:new_tripple/models/trip.dart';
-// ScheduleItemとRouteItemは、リストの型ヒントには使わず、実行時に型を判定する（後述）
+import 'package:new_tripple/models/expense_item.dart';
+
+// 
 
 class TripState {
   // 1. 状態管理
@@ -14,7 +16,10 @@ class TripState {
   // 取得時に時刻順でソート済みである想定。
   final List<Object> scheduleItems; 
 
-  // 4. エラーメッセージ
+  // 💰 4. 支出データ (New!)
+  final List<ExpenseItem> expenses;
+
+  // 5. エラーメッセージ
   final String errorMessage;
 
   const TripState({
@@ -22,6 +27,7 @@ class TripState {
     this.allTrips = const [],
     this.selectedTrip,
     this.scheduleItems = const [],
+    this.expenses = const [],
     this.errorMessage = '',
   });
 
@@ -31,6 +37,7 @@ class TripState {
     List<Trip>? allTrips,
     Trip? selectedTrip,
     List<Object>? scheduleItems,
+    List<ExpenseItem>? expenses,
     String? errorMessage,
   }) {
     return TripState(
@@ -40,6 +47,7 @@ class TripState {
       // ここではシンプルに ? を使って、nullが渡されなければ既存の値を保持するようにする
       selectedTrip: selectedTrip ?? this.selectedTrip,
       scheduleItems: scheduleItems ?? this.scheduleItems,
+      expenses: expenses ?? this.expenses,
       errorMessage: errorMessage ?? this.errorMessage,
     );
   }

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:new_tripple/models/expense_item.dart';
 import 'package:new_tripple/models/trip.dart';
 import 'package:new_tripple/models/schedule_item.dart';
 import 'package:new_tripple/models/route_item.dart';
@@ -222,6 +223,44 @@ class TripRepository {
     // 配列に自分を追加 (arrayUnionは重複防止もしてくれる)
     await _tripsRef.doc(tripId).update({
       'memberIds': FieldValue.arrayUnion([userId]),
+    });
+  }
+
+  CollectionReference<ExpenseItem> _expensesRef(String tripId) {
+    return _firestore
+        .collection('trips')
+        .doc(tripId)
+        .collection('expenses')
+        .withConverter<ExpenseItem>(
+          fromFirestore: ExpenseItem.fromFirestore,
+          toFirestore: (item, _) => item.toFirestore(),
+        );
+  }
+
+  /// 支出一覧を取得
+  Future<List<ExpenseItem>> fetchExpenses(String tripId) async {
+    final snapshot = await _expensesRef(tripId).orderBy('date', descending: true).get();
+    return snapshot.docs.map((doc) => doc.data()).toList();
+  }
+
+  /// 支出を追加・更新
+  Future<void> addOrUpdateExpense(String tripId, ExpenseItem expense) async {
+    if (expense.id.isEmpty) {
+      await _expensesRef(tripId).add(expense);
+    } else {
+      await _expensesRef(tripId).doc(expense.id).set(expense, SetOptions(merge: true));
+    }
+  }
+
+  /// 支出を削除
+  Future<void> deleteExpense(String tripId, String expenseId) async {
+    await _expensesRef(tripId).doc(expenseId).delete();
+  }
+
+  /// ゲストメンバーの追加 (Tripドキュメントの更新)
+  Future<void> addGuestToTrip(String tripId, TripGuest guest) async {
+    await _tripsRef.doc(tripId).update({
+      'guests': FieldValue.arrayUnion([guest.toMap()]),
     });
   }
 }

@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:new_tripple/models/enums.dart';
+import 'package:new_tripple/models/expense_item.dart';
 // 👇 新しいクラス: 旅行の行き先 (複数登録対応)
 class TripDestination {
   final String name;
@@ -88,6 +89,10 @@ class Trip {
 
   final TransportType mainTransport;
 
+  final List<TripGuest> guests;
+  
+
+
   const Trip({
     required this.id,
     required this.title,
@@ -101,6 +106,7 @@ class Trip {
     this.tags,           
     this.coverImageUrl,
     this.mainTransport = TransportType.transit,
+    this.guests = const [],
   });
 
   Trip copyWith({
@@ -116,6 +122,7 @@ class Trip {
     String? coverImageUrl,
     List<ChecklistItem>? checklist,
     TransportType? mainTransport,
+    List<TripGuest>? guests,
   }) {
     return Trip(
       id: id ?? this.id,
@@ -130,6 +137,7 @@ class Trip {
       coverImageUrl: coverImageUrl ?? this.coverImageUrl,
       checklist: checklist ?? this.checklist,
       mainTransport: mainTransport ?? this.mainTransport,
+      guests: guests ?? this.guests, 
     );
   }
 
@@ -158,7 +166,9 @@ class Trip {
       mainTransport: data['mainTransport'] != null
           ? TransportType.values.byName(data['mainTransport'])
           : TransportType.transit,
-      
+      guests: (data['guests'] as List?)?.map((e) {
+        return TripGuest.fromMap(Map<String, dynamic>.from(e as Map));
+      }).toList() ?? [],
     );
   }
 
@@ -175,6 +185,7 @@ class Trip {
       'coverImageUrl': coverImageUrl,
       'destinations': destinations.map((d) => d.toMap()).toList(),
       'mainTransport': mainTransport.name,
+      'guests': guests.map((d) => d.toMap()).toList(),
     };
   } 
 
