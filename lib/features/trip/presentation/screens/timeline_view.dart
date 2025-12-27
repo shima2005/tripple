@@ -21,6 +21,7 @@ import 'package:new_tripple/features/trip/presentation/screens/route_edit_modal.
 import 'package:latlong2/latlong.dart';
 import 'package:new_tripple/shared/widgets/tripple_empty_state.dart';
 import 'package:new_tripple/features/trip/presentation/screens/expense_stats_screen.dart';
+import 'package:new_tripple/services/pdf_service.dart';
 
 class TimelineView extends StatefulWidget {
   final Trip trip;
@@ -367,12 +368,13 @@ class _TimelineViewState extends State<TimelineView> {
                                 size: 24,
                                 shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
                               ),
-                              onPressed: () {
-                                // まだ機能はないのでスナックバーで通知
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Print feature coming soon! 🖨️')),
-                                );
-                              },
+                              onPressed: () async {
+                                final trip = state.selectedTrip!;
+                                final items = state.scheduleItems; // Cubitが持ってるソート済みリスト
+                                
+                                // 処理中はローディング出すなどしてもいいけど、PrintingパッケージがUI出してくれるので直呼びでOK
+                                await PdfService().printTripPdf(trip, items);
+                              }
                             ),
                             IconButton(
                               icon: const Icon(Icons.more_horiz_rounded, color: Colors.white, size: 28, shadows: [Shadow(color: Colors.black38, blurRadius: 4)]),
