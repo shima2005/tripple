@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // 👈 認証用
+import 'package:shared_preferences/shared_preferences.dart'; // 👈 設定読み込み用
+import 'package:latlong2/latlong.dart';
+import 'package:uuid/uuid.dart';
+
 import 'package:new_tripple/models/expense_item.dart';
 import 'package:new_tripple/models/step_detail.dart';
 import 'package:new_tripple/models/trip.dart';
 import 'package:new_tripple/models/schedule_item.dart';
 import 'package:new_tripple/models/route_item.dart';
+import 'package:new_tripple/models/enums.dart';
 import 'trip_state.dart'; 
 import 'package:new_tripple/features/trip/data/trip_repository.dart'; 
-import 'package:new_tripple/models/enums.dart';
 import 'package:new_tripple/services/routing_service.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:new_tripple/services/gemini_service.dart'; 
-import 'package:uuid/uuid.dart';
 import 'package:new_tripple/core/constants/checklist_data.dart'; 
 import 'package:new_tripple/features/settings/domain/settings_state.dart';
 import 'package:new_tripple/services/notification_service.dart';
@@ -20,28 +23,52 @@ import 'package:new_tripple/services/notification_service.dart';
 class TripCubit extends Cubit<TripState> {
   final TripRepository _tripRepository;
   
-  Timer? _ongoingTimer;//常時通知用タイマー
+  Timer? _ongoingTimer; // 常時通知用タイマー
+  StreamSubscription<User?>? _authSubscription; // 🔐 認証監視用
 
   final _geminiService = GeminiService();
   final _routingService = RoutingService();
 
   TripCubit({required TripRepository tripRepository})
       : _tripRepository = tripRepository,
-        super(const TripState());
+        super(const TripState()) {
+    
+    // 🔥 ここで認証状態を監視！
+    // ログインしたら勝手にロード、ログアウトしたらクリア。これでmain.dartでの呼び出しは不要になります。
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null) {
+        loadMyTrips(); // ユーザーがいればロード開始
+      } else {
+        // ログアウト時はデータをクリア
+        emit(state.copyWith(allTrips: [], selectedTrip: null, scheduleItems: [], expenses: []));
+        _stopOngoingTimer();
+        NotificationService().cancelOngoingNotification();
+      }
+    });
+  }
 
   // ----------------------------------------------------------------
   // 1. 旅行リストの管理
   // ----------------------------------------------------------------
 
-  Future<void> loadMyTrips(String userId) async {
+  // 👇 引数をなくし、内部でCurrent Userを使う安全設計に変更
+  Future<void> loadMyTrips() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return; // ユーザーがいなければ何もしない
+
     try {
       emit(state.copyWith(status: TripStatus.loading));
-      final trips = await _tripRepository.fetchTrips(userId);
+      final trips = await _tripRepository.fetchTrips(user.uid);
 
+      //TODO 必要ならサンプルデータ等
       final samples = await _tripRepository.fetchTrips("sample");
       trips.addAll(samples);
 
       emit(state.copyWith(status: TripStatus.loaded, allTrips: trips));
+
+      // 🚀 ロード完了後、アクティブな旅行がないかチェックして通知を開始
+      await _checkAndSetupActiveTripNotification(trips);
+
     } catch (e) {
       emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
     }
@@ -52,6 +79,7 @@ class TripCubit extends Cubit<TripState> {
       emit(state.copyWith(status: TripStatus.submitting));
       await _tripRepository.addTrip(newTrip);
       
+      // 再ロードせずにリスト更新
       final currentTrips = List<Trip>.from(state.allTrips);
       final index = currentTrips.indexWhere((t) => t.id == newTrip.id);
 
@@ -61,7 +89,9 @@ class TripCubit extends Cubit<TripState> {
         if (state.selectedTrip?.id == newTrip.id) updatedSelectedTrip = newTrip;
         emit(state.copyWith(status: TripStatus.loaded, allTrips: currentTrips, selectedTrip: updatedSelectedTrip));
       } else {
-        await loadMyTrips(newTrip.ownerId);
+        // 新規追加の場合はリスト先頭へ
+        currentTrips.insert(0, newTrip);
+        emit(state.copyWith(status: TripStatus.loaded, allTrips: currentTrips));
       }
     } catch (e) {
       emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
@@ -90,10 +120,8 @@ class TripCubit extends Cubit<TripState> {
     try {
       emit(state.copyWith(status: TripStatus.submitting));
       
-      // 現在のTripを取得 (state.selectedTrip または allTrips から検索)
       final currentTrip = state.allTrips.firstWhere((t) => t.id == tripId);
       
-      // copyWithで更新
       final updatedTrip = currentTrip.copyWith(
         title: title,
         startDate: dateRange?.start,
@@ -106,7 +134,6 @@ class TripCubit extends Cubit<TripState> {
 
       await _tripRepository.updateTrip(updatedTrip);
 
-      // State更新
       final currentTrips = List<Trip>.from(state.allTrips);
       final index = currentTrips.indexWhere((t) => t.id == tripId);
       if (index != -1) currentTrips[index] = updatedTrip;
@@ -122,6 +149,8 @@ class TripCubit extends Cubit<TripState> {
     }
   }
 
+  // CreateTripも修正: userIdを引数で渡す必要はなく内部取得でもいいが、
+  // 呼び出し元で指定しているならそのままでもOK。一応安全策で残します。
   Future<void> createTrip({
     required String userId,
     required String title,
@@ -134,7 +163,6 @@ class TripCubit extends Cubit<TripState> {
     try {
       emit(state.copyWith(status: TripStatus.submitting));
 
-      // ID生成 (UUID)
       final tripId = const Uuid().v4();
 
       final newTrip = Trip(
@@ -147,18 +175,15 @@ class TripCubit extends Cubit<TripState> {
         createdAt: DateTime.now(),
         coverImageUrl: coverImageUrl,
         tags: tags,
-        destinations: destinations ?? [], // nullなら空リスト
+        destinations: destinations ?? [],
         mainTransport: mainTransport ?? TransportType.transit,
       );
 
-      // 保存
       await _tripRepository.addTrip(newTrip);
 
-      // リスト更新
       final currentTrips = List<Trip>.from(state.allTrips);
-      currentTrips.insert(0, newTrip); // 先頭に追加
+      currentTrips.insert(0, newTrip); 
       
-      // 作成したTripを選択状態にするかどうかはUX次第（今回はしない）
       emit(state.copyWith(status: TripStatus.loaded, allTrips: currentTrips));
 
     } catch (e) {
@@ -177,8 +202,6 @@ class TripCubit extends Cubit<TripState> {
       final old = currentList[index];
       currentList[index] = ChecklistItem(name: old.name, isChecked: !old.isChecked);
       final updatedTrip = trip.copyWith(checklist: currentList);
-      
-      // 👇 修正: 共通メソッドで state 全体を正しく更新
       await _updateTripStateAndSave(updatedTrip);
     }
   }
@@ -213,7 +236,6 @@ class TripCubit extends Cubit<TripState> {
     emit(state.copyWith(status: TripStatus.submitting));
 
     try {
-      // 既存リストとマージ (重複しないものだけ追加)
       final currentList = List<ChecklistItem>.from(trip.checklist);
       final presetItems = isInternational ? ChecklistData.international : ChecklistData.domestic;
 
@@ -233,10 +255,8 @@ class TripCubit extends Cubit<TripState> {
 
   Future<void> _updateTripStateAndSave(Trip updatedTrip) async {
     try {
-      // 1. まずFirestoreに保存
       await _tripRepository.updateTrip(updatedTrip);
 
-      // 2. allTrips の中の該当Tripも差し替える
       final currentTrips = List<Trip>.from(state.allTrips);
       final index = currentTrips.indexWhere((t) => t.id == updatedTrip.id);
       
@@ -244,8 +264,6 @@ class TripCubit extends Cubit<TripState> {
         currentTrips[index] = updatedTrip;
       }
 
-      // 3. selectedTrip と allTrips 両方を更新して emit
-      // これで画面が確実にリビルドされる
       emit(state.copyWith(
         status: TripStatus.loaded,
         selectedTrip: updatedTrip,
@@ -260,19 +278,15 @@ class TripCubit extends Cubit<TripState> {
   Future<bool> joinTripByCode(String userId, String tripCode) async {
     try {
       emit(state.copyWith(status: TripStatus.submitting));
-      
-      // トリムして余計なスペース削除
       final cleanId = tripCode.trim();
       
       await _tripRepository.joinTrip(cleanId, userId);
+      await loadMyTrips(); // userId引数なしで呼べるようになった
       
-      // 成功したらリストを更新して表示
-      await loadMyTrips(userId);
-      
-      return true; // 成功
+      return true;
     } catch (e) {
       emit(state.copyWith(status: TripStatus.error, errorMessage: 'Failed to join: ${e.toString()}'));
-      return false; // 失敗
+      return false;
     }
   }
 
@@ -284,9 +298,22 @@ class TripCubit extends Cubit<TripState> {
     try {
       emit(state.copyWith(status: TripStatus.loading));
       
-      final selectedTrip = state.allTrips.firstWhere((t) => t.id == tripId);
+      // allTripsから探す
+      Trip selectedTrip;
+      try {
+        selectedTrip = state.allTrips.firstWhere((t) => t.id == tripId);
+      } catch (_) {
+        // もしリストになければ（ダイレクトリンク等）、個別取得などの対応が必要だが
+        // ここではエラーにするか再ロードを試みる
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          final trips = await _tripRepository.fetchTrips(user.uid);
+          selectedTrip = trips.firstWhere((t) => t.id == tripId);
+        } else {
+          throw Exception('User not logged in');
+        }
+      }
       
-      // 並行してスケジュールと支出を取得
       final results = await Future.wait([
         _tripRepository.fetchFullSchedule(tripId),
         _tripRepository.fetchExpenses(tripId),
@@ -299,17 +326,22 @@ class TripCubit extends Cubit<TripState> {
         status: TripStatus.loaded, 
         selectedTrip: selectedTrip, 
         scheduleItems: items,
-        expenses: expenses, // 👈 Stateにセット
+        expenses: expenses,
       ));
+
+      // ⚠️ 画面を開いた時にも通知を同期したければ、ここでも呼ぶ。
+      // ただし二重予約は上書きされるだけなので問題なし。
+      await _syncNotificationsWithoutState();
+
     } catch (e) {
       emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
     }
   }
 
+  // ... (updateRouteItem, addOrUpdateScheduledItem, deleteScheduledItem は変更なし) ...
   Future<void> updateRouteItem(String tripId, RouteItem updatedRoute) async {
     try {
       emit(state.copyWith(status: TripStatus.submitting));
-      // RouteItem単体の更新は手動操作用なので、共通ロジックは使わず直接APIを叩くか判断する
       final currentItems = List<Object>.from(state.scheduleItems);
       final oldRouteIndex = currentItems.indexWhere((i) => i is RouteItem && i.id == updatedRoute.id);
       
@@ -349,7 +381,6 @@ class TripCubit extends Cubit<TripState> {
       }else{
         currentScheduledItems.add(newItem);
       }
-
       await _recalculateAndSave(tripId: tripId, sortedScheduledItems: _sortScheduledItems(currentScheduledItems), itemToSave: newItem);
     } catch (e) {
       emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
@@ -368,9 +399,8 @@ class TripCubit extends Cubit<TripState> {
   }
 
   // ----------------------------------------------------------------
-  // 3. AI機能
+  // 3. AI機能 (createTripWithAI なども変更なし)
   // ----------------------------------------------------------------
-
   Future<Trip?> createTripWithAI({
     required String userId, required String title, required String destination,
     required DateTimeRange dateRange, required List<ScheduledItem> mustVisitItems,
@@ -418,8 +448,8 @@ class TripCubit extends Cubit<TripState> {
       await _tripRepository.addTrip(newTrip);
       await addAIPlanToTrip(tripId: tripId, aiItems: mergedItems, defaultTransport: transportType);
       
-      final allTrips = await _tripRepository.fetchTrips(userId);
-      emit(state.copyWith(status: TripStatus.loaded, allTrips: allTrips));
+      // ここで再取得してリスト更新
+      await loadMyTrips(); 
       await selectTrip(tripId);
       return newTrip;
     } catch (e) {
@@ -428,12 +458,11 @@ class TripCubit extends Cubit<TripState> {
     }
   }
 
-  // --- AI最適化: シミュレーション ---
+  // --- AI最適化: シミュレーション (変更なし) ---
   Future<List<ScheduledItem>> simulateAutoSchedule({
     required int dayIndex, required DateTime date,
     bool allowSuggestions = false, Set<String> lockedItemIds = const {},
   }) async {
-    // ♻️ Helper利用
     final currentDayItems = _getDayScheduledItems(dayIndex);
     if (currentDayItems.isEmpty) throw Exception('No items to optimize');
 
@@ -447,7 +476,6 @@ class TripCubit extends Cubit<TripState> {
     final fixedItems = optimizedItems.map((i) => i.copyWith(dayIndex: dayIndex)).toList();
     fixedItems.sort((a, b) => a.time.compareTo(b.time));
 
-    // ★共通メソッドを使用
     for (int i = 0; i < fixedItems.length - 1; i++) {
       final current = fixedItems[i];
       final next = fixedItems[i + 1];
@@ -468,7 +496,7 @@ class TripCubit extends Cubit<TripState> {
     return fixedItems;
   }
 
-  // --- AI最適化: 保存 ---
+  // --- AI最適化: 保存 (変更なし) ---
   Future<void> saveOptimizedSchedule({
     required String tripId, required int dayIndex, required List<ScheduledItem> optimizedItems,
   }) async {
@@ -484,7 +512,6 @@ class TripCubit extends Cubit<TripState> {
         final next = itemsWithIds[i + 1];
         if (current.latitude == null || next.latitude == null) continue;
 
-        // ★共通メソッドを使用
         final currentEndTime = current.time.add(Duration(minutes: current.durationMinutes ?? 60));
         
         final route = await _calculateRouteSegment(
@@ -505,30 +532,26 @@ class TripCubit extends Cubit<TripState> {
     }
   }
 
-  // --- AI提案: 取得 & 追加 ---
+  // --- AI提案 (fetchSpotSuggestions は変更なし) ---
   Future<List<ScheduledItem>> fetchSpotSuggestions({required int dayIndex, required String userRequest, required int count}) async {
     final trip = state.selectedTrip;
     if (trip == null) throw Exception('No trip');
     
-    // ♻️ Helper利用
     final dayItems = _getDayScheduledItems(dayIndex);
     
     final lastItem = dayItems.isNotEmpty ? dayItems.last : null;
     return await _geminiService.suggestSpots(lastItem: lastItem, targetDate: trip.startDate.add(Duration(days: dayIndex)), destination: trip.destinations.firstOrNull?.name ?? 'Spot', count: count, userRequest: userRequest);
   }
 
+  // --- addSuggestedSpot (変更なし) ---
   Future<void> addSuggestedSpot({required String tripId, required int dayIndex, required ScheduledItem suggestedItem}) async {
     try {
       emit(state.copyWith(status: TripStatus.submitting));
-      
       final currentDayItems = _getDayScheduledItems(dayIndex);
-      
       ScheduledItem? prevItem;
       ScheduledItem? nextItem;
-      
       if (currentDayItems.isNotEmpty) {
         final last = currentDayItems.last;
-        // 最後のアイテムが長時間滞在(宿泊など)の場合の挿入位置調整ロジック（既存のまま）
         if (last.category == ItemCategory.accommodation && (last.durationMinutes ?? 0) > 360) {
           nextItem = last;
           if (currentDayItems.length > 1) prevItem = currentDayItems[currentDayItems.length - 2];
@@ -536,70 +559,43 @@ class TripCubit extends Cubit<TripState> {
           prevItem = last;
         }
       }
-
       final newItem = suggestedItem.copyWith(id: const Uuid().v4(), dayIndex: dayIndex);
       final List<ScheduledItem> itemsToSave = [newItem];
       final List<RouteItem> routesToSave = [];
-      // final List<String> routeIdsToDelete = []; // 🗑️ 削除リストは不要になるので削除！
 
-      // A. 前との接続 (Prev -> New)
-      // これは常に新しい区間なので、新規IDで作成してOK
       if (prevItem != null) {
         final prevEndTime = prevItem.time.add(Duration(minutes: prevItem.durationMinutes ?? 60));
-        
         final route = await _calculateRouteSegment(
           startItem: prevItem, nextItem: newItem, startTime: prevEndTime,
           newRouteId: const Uuid().v4(), defaultTransport: TransportType.transit
         );
-        
         itemsToSave[0] = newItem.copyWith(time: prevEndTime.add(Duration(minutes: route.durationMinutes)));
         routesToSave.add(route);
       } else {
-        // 先頭に追加される場合
         itemsToSave[0] = newItem.copyWith(time: state.selectedTrip!.startDate.add(Duration(days: dayIndex)).add(const Duration(hours: 10)));
       }
 
-      // B. 後ろとの接続 (New -> Next)
-      // ⚠️ ここが修正ポイント！
       if (nextItem != null) {
-        // 1. 既存のルート (Prev -> Next だったもの) を探す
         RouteItem? existingRouteToNext;
         try {
           existingRouteToNext = state.scheduleItems.whereType<RouteItem>().firstWhere(
             (r) => r.destinationItemId == nextItem!.id,
           );
-        } catch (_) {
-          // 見つからない場合（先頭挿入時など）はnullのまま
-        }
+        } catch (_) {}
 
         final newEndTime = itemsToSave[0].time.add(Duration(minutes: newItem.durationMinutes ?? 60));
-        
-        // 2. calculateRouteSegment に existingRoute を渡す！
-        // これにより、IDが再利用され、Firestore上では「削除＆新規」ではなく「更新」として扱われる
         final route = await _calculateRouteSegment(
-          startItem: newItem, 
-          nextItem: nextItem, 
-          startTime: newEndTime,
-          existingRoute: existingRouteToNext, // 👈 重要：IDを引き継ぐ
-          newRouteId: const Uuid().v4(),      // 引き継げない場合のみ新規ID
-          defaultTransport: TransportType.transit
+          startItem: newItem, nextItem: nextItem, startTime: newEndTime,
+          existingRoute: existingRouteToNext, newRouteId: const Uuid().v4(), defaultTransport: TransportType.transit
         );
 
         itemsToSave.add(nextItem.copyWith(time: newEndTime.add(Duration(minutes: route.durationMinutes))));
         routesToSave.add(route);
-
-        // 3. 以前の「古いルート削除」処理は削除する
-        // routeIdsToDelete.add(...) ← これを消す
       }
 
-      // batchUpdateSchedule の呼び出し（routeIdsToDelete は空でOK）
       await _tripRepository.batchUpdateSchedule(
-        tripId: tripId, 
-        itemsToAddOrUpdate: itemsToSave, 
-        routesToAddOrUpdate: routesToSave, 
-        routeIdsToDelete: [], // 空リストを渡す
+        tripId: tripId, itemsToAddOrUpdate: itemsToSave, routesToAddOrUpdate: routesToSave, routeIdsToDelete: [], 
       );
-      
       await selectTrip(tripId);
     } catch (e) {
       emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
@@ -607,33 +603,35 @@ class TripCubit extends Cubit<TripState> {
   }
 
   // ==============================================================================
-  // 🔔 通知ロジック (ここから追加！)
+  // 🔔 通知ロジック (RouteItem & StepDetail 対応版)
   // ==============================================================================
 
-  /// 設定とスケジュールを元に通知を同期する
   void syncNotifications(SettingsState settings) {
-    // 1. マスター権限がない、またはトリップ未選択なら全キャンセルして終了
     if (!settings.isNotificationEnabled || state.selectedTrip == null) {
       _stopOngoingTimer();
       NotificationService().cancelOngoingNotification();
-      // 本当は cancelAllReminders() もしたいが、今回は上書き予約で対応
       return;
     }
 
-    final items = state.scheduleItems.whereType<ScheduledItem>().toList();
-
-    // 2. リマインダー予約
-    if (settings.isReminderEnabled) {
-      _scheduleReminders(items, settings.reminderMinutesBefore);
+    // 👇 修正: ScheduledItem だけでなく RouteItem も含める
+    // (scheduleItems は Object のリストなので、型チェックして抽出)
+    final allItems = <dynamic>[];
+    for (var item in state.scheduleItems) {
+      if (item is ScheduledItem || item is RouteItem) {
+        allItems.add(item);
+      }
     }
 
-    // 3. 常時通知 (トラベルモード)
+    // リマインダー予約
+    if (settings.isReminderEnabled) {
+      _scheduleReminders(allItems, settings.reminderMinutesBefore);
+    }
+
+    // 常時通知
     if (settings.isOngoingNotificationEnabled) {
-      // タイマーが動いてなければ開始
       if (_ongoingTimer == null || !_ongoingTimer!.isActive) {
-        // 即時実行
         _updateOngoingNotification();
-        // 以降、1分ごとに更新 (現在地や状況が変わるため)
+        // 1分ごとに更新
         _ongoingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
           _updateOngoingNotification();
         });
@@ -644,104 +642,170 @@ class TripCubit extends Cubit<TripState> {
     }
   }
 
-  Future<void> _scheduleReminders(List<ScheduledItem> items, int minutesBefore) async {
-    print('🔔 Scheduling reminders check...'); // 👈 デバッグ用
-    
+  // 👇 修正: RouteItemも通知対象にする
+  Future<void> _scheduleReminders(List<dynamic> items, int minutesBefore) async {
     for (var item in items) {
-      final notificationId = item.id.hashCode;
-      final scheduledTime = item.time.subtract(Duration(minutes: minutesBefore));
+      // 共通のフィールドを取り出す
+      DateTime? time;
+      String title = '';
+      String body = '';
+      int id = 0;
 
-      print('   - Checking Item: ${item.name} at ${scheduledTime}'); // 👈 デバッグ用
+      if (item is ScheduledItem) {
+        time = item.time;
+        title = 'Soon: ${item.name}';
+        body = 'Plan starts in $minutesBefore min';
+        id = item.id.hashCode;
+      } else if (item is RouteItem) {
+        time = item.time;
+        // 移動手段のアイコンなどを出す
+        final transport = item.transportType.name.toUpperCase();
+        title = 'Time to move! ($transport)';
+        body = 'Moving starts in $minutesBefore min. Duration: ${item.durationMinutes} min';
+        id = item.id.hashCode;
+      }
 
-      if (scheduledTime.isAfter(DateTime.now())) {
-        print('   ✅ Scheduled!'); // 👈 これが出れば予約までは成功している
-        await NotificationService().scheduleNotification(
-          id: notificationId,
-          title: 'Soon: ${item.name}',
-          body: 'Plan starts in $minutesBefore min',
-          scheduledDate: scheduledTime,
-        );
-      } else {
-        print('   ❌ Skipped (Past time)'); // 👈 これが出たら時間が原因
+      if (time != null) {
+        final scheduledTime = time.subtract(Duration(minutes: minutesBefore));
+        if (scheduledTime.isAfter(DateTime.now())) {
+          await NotificationService().scheduleNotification(
+            id: id,
+            title: title,
+            body: body,
+            scheduledDate: scheduledTime,
+          );
+        }
       }
     }
   }
 
-  /// 現在時刻に基づいて常時通知の内容を更新
+  // 👇 修正: 移動中の詳細ステップまで判定して表示する超強化版
   Future<void> _updateOngoingNotification() async {
     final trip = state.selectedTrip;
-    final items = state.scheduleItems.whereType<ScheduledItem>().toList();
-    if (trip == null || items.isEmpty) return;
+    // ScheduledItem と RouteItem を両方取得してマージ
+    final allItems = <dynamic>[];
+    for (var item in state.scheduleItems) {
+      if (item is ScheduledItem || item is RouteItem) {
+        allItems.add(item);
+      }
+    }
+
+    if (trip == null || allItems.isEmpty) return;
 
     final now = DateTime.now();
+    // 旅行期間外ならスキップ
+    if (now.isBefore(trip.startDate) || now.isAfter(trip.endDate.add(const Duration(days: 1)))) return;
 
-    // 旅行期間外なら表示しない (または "Trip Finished" と出す)
-    if (now.isBefore(trip.startDate) || now.isAfter(trip.endDate.add(const Duration(days: 1)))) {
-       // 旅行前/後の処理... 今回はスキップ
-       return;
-    }
+    // 時間順にソート (ScheduledItemもRouteItemも time プロパティを持つ前提)
+    allItems.sort((a, b) {
+      final timeA = (a is ScheduledItem) ? a.time : (a as RouteItem).time;
+      final timeB = (b is ScheduledItem) ? b.time : (b as RouteItem).time;
+      return timeA.compareTo(timeB);
+    });
 
-    // A. 現在進行中の予定を探す (開始時間 ~ +1時間以内 と仮定)
-    ScheduledItem? currentItem;
-    ScheduledItem? nextItem;
-
-    // ソート (念のため)
-    items.sort((a, b) => a.time.compareTo(b.time));
-
-    for (var i = 0; i < items.length; i++) {
-      final item = items[i];
-      final diff = now.difference(item.time).inMinutes;
-
-      // 開始済みで、開始から60分以内なら「今ここにいる」とみなす簡易ロジック
-      // (本来は item.duration を持つべきだが、今回は簡易実装)
-      if (diff >= 0 && diff < 60) {
-        currentItem = item;
-        // 次の予定
-        if (i + 1 < items.length) nextItem = items[i + 1];
-        break;
-      }
-      
-      // まだ始まっていない最初の予定 = 次の予定
-      if (diff < 0) {
-        nextItem = item;
-        break;
-      }
-    }
-
-    // 文言の生成
     String currentStatus = 'Travel Mode Active';
     String nextPlanStr = 'No upcoming plans';
     String plainStatus = 'Travel Mode Active';
     String plainPlan = 'No upcoming plans';
 
-    // パターン1: 何か実行中
-    if (currentItem != null) {
-      // Android用 (HTML)
-      currentStatus = 'Now at <b>${currentItem.name}</b>';
-      // iOS用
-      plainStatus = 'Now at ${currentItem.name}';
+    dynamic currentItem;
+    dynamic nextItem;
 
-      if (nextItem != null) {
-        final timeStr = "${nextItem.time.hour}:${nextItem.time.minute.toString().padLeft(2,'0')}";
-        nextPlanStr = 'Next: <font color="#FF9800"><b>${nextItem.name}</b></font> ($timeStr)';
-        plainPlan = 'Next: ${nextItem.name} ($timeStr)';
+    // 現在地判定ロジック
+    for (var i = 0; i < allItems.length; i++) {
+      final item = allItems[i];
+      DateTime startTime;
+      int duration = 0;
+
+      if (item is ScheduledItem) {
+        startTime = item.time;
+        duration = item.durationMinutes ?? 60;
+      } else if (item is RouteItem) {
+        startTime = item.time;
+        duration = item.durationMinutes;
       } else {
-        nextPlanStr = 'End of the day';
-        plainPlan = 'End of the day';
+        continue;
       }
-    } 
-    // パターン2: 移動中 (今の予定はないが、次の予定がある)
-    else if (nextItem != null) {
-      final timeStr = "${nextItem.time.hour}:${nextItem.time.minute.toString().padLeft(2,'0')}";
-      
-      currentStatus = '<b>Moving</b> to next spot';
-      plainStatus = 'Moving to next spot';
 
-      nextPlanStr = 'Next: <font color="#2196F3"><b>${nextItem.name}</b></font> ($timeStr)';
-      plainPlan = 'Next: ${nextItem.name} ($timeStr)';
+      final endTime = startTime.add(Duration(minutes: duration));
+
+      // 今が「開始〜終了」の間なら、それが Current
+      if (now.isAfter(startTime) && now.isBefore(endTime)) {
+        currentItem = item;
+        if (i + 1 < allItems.length) nextItem = allItems[i + 1];
+        break;
+      }
+      
+      // まだ始まっていない直近の予定なら、それが Next
+      if (now.isBefore(startTime)) {
+        nextItem = item;
+        break;
+      }
     }
 
-    // 通知更新
+    // ■ Currentの表示作成
+    if (currentItem != null) {
+      if (currentItem is ScheduledItem) {
+        // 滞在中
+        currentStatus = 'Now at <b>${currentItem.name}</b>';
+        plainStatus = 'Now at ${currentItem.name}';
+      } else if (currentItem is RouteItem) {
+        // 🚗 移動中: StepDetail を解析して「今どのステップか」を推定する
+        final route = currentItem;
+        String transportDetail = route.transportType.name; // デフォルト
+        
+        // StepDetailがあれば、経過時間から現在のステップを特定
+        if (route.detailedSteps.isNotEmpty) {
+          final timeSinceStart = now.difference(route.time).inMinutes;
+          int accumMinutes = 0;
+          for (var step in route.detailedSteps) {
+            accumMinutes += (step.durationMinutes as int);
+            if (timeSinceStart < accumMinutes) {
+              // 今このステップにいる！
+              transportDetail = step.transportType.name; // "walk", "train" etc
+              // 残り時間
+              // final remain = accumMinutes - timeSinceStart;
+              break;
+            }
+          }
+        }
+        
+        // アイコンなどを装飾
+        String icon = '🚗';
+        if (transportDetail.contains('walk')) icon = '🚶';
+        if (transportDetail.contains('train') || transportDetail.contains('subway')) icon = '🚃';
+        if (transportDetail.contains('bus')) icon = '🚌';
+
+        currentStatus = 'Moving: <b>$icon ${transportDetail.toUpperCase()}</b>';
+        plainStatus = 'Moving: $icon ${transportDetail.toUpperCase()}';
+      }
+    } else {
+      // 予定と予定の隙間時間など
+      currentStatus = 'Free Time / Waiting';
+      plainStatus = 'Free Time / Waiting';
+    }
+
+    // ■ Nextの表示作成
+    if (nextItem != null) {
+      DateTime nextTime;
+      String nextName = '';
+      
+      if (nextItem is ScheduledItem) {
+        nextTime = nextItem.time;
+        nextName = nextItem.name;
+      } else {
+        nextTime = (nextItem as RouteItem).time;
+        nextName = 'Move (${nextItem.transportType.name})';
+      }
+
+      final timeStr = "${nextTime.hour}:${nextTime.minute.toString().padLeft(2,'0')}";
+      nextPlanStr = 'Next: <font color="#FF9800"><b>$nextName</b></font> ($timeStr)';
+      plainPlan = 'Next: $nextName ($timeStr)';
+    } else {
+      nextPlanStr = 'End of day';
+      plainPlan = 'End of day';
+    }
+
     await NotificationService().showOngoingNotification(
       currentStatus: currentStatus,
       nextPlan: nextPlanStr,
@@ -749,6 +813,64 @@ class TripCubit extends Cubit<TripState> {
       plainPlan: plainPlan,
     );
   }
+  
+  
+  // 👇 新規追加: Stateなしで設定を直接読んで通知をセットアップ
+  Future<void> _syncNotificationsWithoutState() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    final isNotifyEnabled = prefs.getBool('isNotificationEnabled') ?? false;
+    final isOngoingEnabled = prefs.getBool('isOngoingNotificationEnabled') ?? true;
+    final isReminderEnabled = prefs.getBool('isReminderEnabled') ?? true;
+    final minutes = prefs.getInt('reminderMinutesBefore') ?? 15;
+
+    final dummySettings = SettingsState(
+      isNotificationEnabled: isNotifyEnabled,
+      isOngoingNotificationEnabled: isOngoingEnabled,
+      isReminderEnabled: isReminderEnabled,
+      reminderMinutesBefore: minutes,
+    );
+
+    syncNotifications(dummySettings);
+  }
+
+  // 👇 新規追加: 起動時にアクティブな旅行を探して通知セット
+  Future<void> _checkAndSetupActiveTripNotification(List<Trip> trips) async {
+    final now = DateTime.now();
+    
+    Trip? activeTrip;
+    try {
+      activeTrip = trips.firstWhere((trip) {
+        final start = DateTime(trip.startDate.year, trip.startDate.month, trip.startDate.day);
+        final end = DateTime(trip.endDate.year, trip.endDate.month, trip.endDate.day, 23, 59, 59);
+        return now.isAfter(start) && now.isBefore(end);
+      });
+    } catch (_) {
+      activeTrip = null;
+    }
+
+    if (activeTrip != null) {
+      print('🚀 Active trip detected: ${activeTrip.title}');
+      try {
+        final scheduleItems = await _tripRepository.fetchFullSchedule(activeTrip.id);
+        
+        // 画面データとしてセットしておく (これで次回開いた時に早い)
+        emit(state.copyWith(
+          selectedTrip: activeTrip,
+          scheduleItems: scheduleItems as List<Object>,
+        ));
+
+        // 設定を読んで通知セット
+        await _syncNotificationsWithoutState();
+        
+      } catch (e) {
+        print('Background schedule fetch error: $e');
+      }
+    } else {
+      NotificationService().cancelOngoingNotification();
+    }
+  }
+
 
   void _stopOngoingTimer() {
     _ongoingTimer?.cancel();
@@ -758,6 +880,7 @@ class TripCubit extends Cubit<TripState> {
   @override
   Future<void> close() {
     _stopOngoingTimer();
+    _authSubscription?.cancel();
     return super.close();
   }
 
@@ -765,7 +888,6 @@ class TripCubit extends Cubit<TripState> {
   // 4. Private Helpers: 共通ロジック
   // ----------------------------------------------------------------
 
-  // ♻️ 追加: その日のScheduledItemを取得・ソートする共通ヘルパー
   List<ScheduledItem> _getDayScheduledItems(int dayIndex) {
     return state.scheduleItems
         .whereType<ScheduledItem>()
@@ -774,7 +896,6 @@ class TripCubit extends Cubit<TripState> {
       ..sort((a, b) => a.time.compareTo(b.time));
   }
 
-  /// 🔥 最重要リファクタリング: ルート計算の共通化
   Future<RouteItem> _calculateRouteSegment({
     required ScheduledItem startItem,
     required ScheduledItem nextItem,
@@ -783,29 +904,21 @@ class TripCubit extends Cubit<TripState> {
     RouteItem? existingRoute, 
     String? newRouteId, 
   }) async {
-    // 1. 移動手段の決定
-    // 既存ルートがあればその手段を、なければ距離で判定
     final distance = const Distance().as(LengthUnit.Meter, 
         LatLng(startItem.latitude!, startItem.longitude!), 
         LatLng(nextItem.latitude!, nextItem.longitude!)
     );
-    
     TransportType type = existingRoute?.transportType ?? (distance < 800 ? TransportType.walk : defaultTransport);
 
-    // 2. 再利用判定：API呼び出しをスキップするかチェック
     if (existingRoute != null) {
-      // 座標がほぼ同じかチェック (浮動小数点なので許容誤差を持たせる)
       final isSameStart = (existingRoute.startLatitude! - startItem.latitude!).abs() < 0.0001 &&
                           (existingRoute.startLongitude! - startItem.longitude!).abs() < 0.0001;
       final isSameEnd   = (existingRoute.endLatitude! - nextItem.latitude!).abs() < 0.0001 &&
                           (existingRoute.endLongitude! - nextItem.longitude!).abs() < 0.0001;
       final isSameType  = existingRoute.transportType == type;
-      
-      // 条件: 場所も移動手段も同じで、かつPolyline等のデータが既に取得済みの場合
       if (isSameStart && isSameEnd && isSameType && existingRoute.polyline != null) {
-        // APIを呼ばずに既存データをコピーして返す（IDだけ新しくするならする）
         return existingRoute.copyWith(
-          id: newRouteId ?? const Uuid().v4(), // 必要なら新しいID
+          id: newRouteId ?? const Uuid().v4(),
           dayIndex: startItem.dayIndex,
           time: startTime,
           destinationItemId: nextItem.id,
@@ -813,33 +926,25 @@ class TripCubit extends Cubit<TripState> {
       }
     }
 
-    // 3. APIコール (条件が変わった場合のみここに来る)
     final result = await _routingService.getRouteInfo(
       start: LatLng(startItem.latitude!, startItem.longitude!),
       end: LatLng(nextItem.latitude!, nextItem.longitude!),
       type: type,
     );
 
-    // 4. 値の決定 (AI優先ロジック含む)
     String? polyline = result.polyline;
     int duration = result.durationMinutes;
     List<StepDetail> steps = result.steps;
     String? externalLink = result.externalLink;
 
-    // AIが設定した時間を維持したい場合 (条件が変わっても、AIの意思(時間設定)を残したい場合)
-    // ただし場所が変わったなら再計算すべきなので、ここは「移動手段が公共交通で、既存がある場合」くらいの弱い維持にする
     if (existingRoute != null && existingRoute.transportType == type && type == TransportType.transit) {
-       // 時間だけは既存維持 (AIの推論を優先)
        duration = existingRoute.durationMinutes;
     }
-
-    // 安全策
     if (_routingService.isPublicTransport(type)) {
        if (duration < 20 && duration == result.durationMinutes) duration += 15;
     }
     if (duration < 1) duration = 1;
 
-    // 5. 新しいRouteItem生成
     return RouteItem(
       id: existingRoute?.id ?? newRouteId ?? const Uuid().v4(),
       dayIndex: startItem.dayIndex,
@@ -864,63 +969,26 @@ class TripCubit extends Cubit<TripState> {
     ScheduledItem? itemToSave,
     String? itemIdToDelete
   }) async {
-    // ---------------------------------------------------
-    // 1. 現状把握
-    // ---------------------------------------------------
-    // 現在Stateにある全てのルートを取得
     final allExistingRoutes = state.scheduleItems.whereType<RouteItem>().toList();
-    
-    // 検索用マップ (DestinationID -> RouteItem)
-    // 重複がある場合、ここで1つに絞られる（上書きされる）が、
-    // 「allExistingRoutes」には全量残っているので、削除漏れは起きない仕組み。
     final routeMap = {for (var r in allExistingRoutes) r.destinationItemId: r};
-    
-    // ---------------------------------------------------
-    // 2. 正解ルートの計算
-    // ---------------------------------------------------
     final List<RouteItem> routesToSave = [];
-    final Set<String> validRouteIds = {}; // 🟢 今回「使う」と決めたルートIDのリスト
+    final Set<String> validRouteIds = {};
 
     for (int i = 0; i < sortedScheduledItems.length - 1; i++) {
       final current = sortedScheduledItems[i];
       final next = sortedScheduledItems[i + 1];
-      
-      // 緯度経度がないアイテムはルート計算できないのでスキップ
       if (current.latitude == null || next.latitude == null) continue;
-
       final prevEndTime = current.time.add(Duration(minutes: current.durationMinutes ?? 60));
-      
-      // この区間の既存ルートを探す
       final existing = routeMap[next.id]; 
-
-      // ルート計算 (ID再利用ロジック含む)
       final route = await _calculateRouteSegment(
-        startItem: current, 
-        nextItem: next, 
-        startTime: prevEndTime,
-        existingRoute: existing, 
+        startItem: current, nextItem: next, startTime: prevEndTime, existingRoute: existing, 
       );
-      
-      // 保存リストに追加
       routesToSave.add(route);
-      
-      // ★重要: このルートIDは「有効（削除してはいけない）」としてマーク
       validRouteIds.add(route.id);
     }
 
-    // ---------------------------------------------------
-    // 3. 削除対象の決定 (Clean Sweep)
-    // ---------------------------------------------------
-    // 全ての既存ルートIDのうち、「有効リスト (validRouteIds)」に入っていないものは全て削除！
-    // これにより、重複ルート、孤立ルート、不要になったルートが根こそぎ消える。
-    final routeIdsToDelete = allExistingRoutes
-        .map((r) => r.id)
-        .where((id) => !validRouteIds.contains(id))
-        .toList();
+    final routeIdsToDelete = allExistingRoutes.map((r) => r.id).where((id) => !validRouteIds.contains(id)).toList();
 
-    // ---------------------------------------------------
-    // 4. Firestoreへ保存
-    // ---------------------------------------------------
     await _tripRepository.batchUpdateSchedule(
       tripId: tripId, 
       itemsToAddOrUpdate: itemToSave != null ? [itemToSave] : null,
@@ -929,7 +997,6 @@ class TripCubit extends Cubit<TripState> {
       routeIdsToDelete: routeIdsToDelete,
     );
 
-    // 最後に最新データを再取得してStateを更新
     await selectTrip(tripId);
   }
 
@@ -947,19 +1014,18 @@ class TripCubit extends Cubit<TripState> {
         if (current.dayIndex != next.dayIndex || current.latitude == null || next.latitude == null) {
            routesToAdd.add(null); continue; 
         }
-
         final currentEndTime = current.time.add(Duration(minutes: current.durationMinutes ?? 60));
-        
-        // ★共通メソッドを使用
         final route = await _calculateRouteSegment(
           startItem: current, nextItem: next, startTime: currentEndTime,
           defaultTransport: defaultTransport, newRouteId: const Uuid().v4()
         );
-
         optimizedItems[i + 1] = next.copyWith(time: currentEndTime.add(Duration(minutes: route.durationMinutes))); 
         routesToAdd.add(route);
       }
       await _tripRepository.batchAddAIPlan(tripId: tripId, spots: optimizedItems, routes: routesToAdd);
+      
+      // 再取得
+      await loadMyTrips();
       await selectTrip(tripId);
     } catch (e) {
       emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
@@ -982,14 +1048,10 @@ class TripCubit extends Cubit<TripState> {
     } catch (_) { return null; }
   }
 
-  
-
   // 💰 支出の追加・更新
   Future<void> addOrUpdateExpense(String tripId, ExpenseItem expense) async {
     try {
       emit(state.copyWith(status: TripStatus.submitting));
-
-      // IDがない場合はクライアント側で生成 (State即時反映のため)
       final expenseToSave = expense.id.isEmpty 
           ? ExpenseItem(
               id: const Uuid().v4(), 
@@ -1006,21 +1068,16 @@ class TripCubit extends Cubit<TripState> {
             ) 
           : expense;
 
-      // Firestoreへ保存
       await _tripRepository.addOrUpdateExpense(tripId, expenseToSave);
 
-      // ローカルStateを更新
       final currentExpenses = List<ExpenseItem>.from(state.expenses);
       final index = currentExpenses.indexWhere((e) => e.id == expenseToSave.id);
-      
       if (index != -1) {
         currentExpenses[index] = expenseToSave;
       } else {
         currentExpenses.insert(0, expenseToSave);
-        // 日付順ソート (新しい順)
         currentExpenses.sort((a, b) => b.date.compareTo(a.date));
       }
-
       emit(state.copyWith(status: TripStatus.loaded, expenses: currentExpenses));
     } catch (e) {
       emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
@@ -1031,13 +1088,9 @@ class TripCubit extends Cubit<TripState> {
   Future<void> deleteExpense(String tripId, String expenseId) async {
     try {
       emit(state.copyWith(status: TripStatus.submitting));
-      
-      // Repositoryにdeleteメソッドがある前提
       await _tripRepository.deleteExpense(tripId, expenseId);
-      
       final currentExpenses = List<ExpenseItem>.from(state.expenses);
       currentExpenses.removeWhere((e) => e.id == expenseId);
-      
       emit(state.copyWith(status: TripStatus.loaded, expenses: currentExpenses));
     } catch (e) {
       emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));

@@ -42,7 +42,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     super.initState();
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
-      context.read<TripCubit>().loadMyTrips(uid);
+      context.read<TripCubit>().loadMyTrips();
     }
   }
 

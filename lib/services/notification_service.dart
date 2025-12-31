@@ -19,12 +19,19 @@ class NotificationService {
 
     try {
       // 👇 修正: 型を「String」と書かずに「final」だけで受け取り、確実に文字列化する
-      final timeZoneName = await FlutterTimezone.getLocalTimezone();
+      final rawName = await FlutterTimezone.getLocalTimezone();
+      String timeZoneName = rawName.toString();
+      
+      // "TimezoneInfo(" で始まっていたら、中身の "Asia/Tokyo" だけ取り出す
+      if (timeZoneName.contains('TimezoneInfo')) {
+        final match = RegExp(r'TimezoneInfo\(([^,]+),').firstMatch(timeZoneName);
+        if (match != null) {
+          timeZoneName = match.group(1) ?? 'Asia/Tokyo';
+        }
+      }
       tz.setLocalLocation(tz.getLocation(timeZoneName.toString()));
       
-      print('Timezone set to: $timeZoneName'); 
     } catch (e) {
-      print('Timezone init error: $e');
       try {
         tz.setLocalLocation(tz.getLocation('Asia/Tokyo'));
       } catch (e2) {
@@ -74,15 +81,12 @@ class NotificationService {
   }) async {
 
     if (scheduledDate.isBefore(DateTime.now())) {
-      print('❌ Skipped schedule because date is in the past: $scheduledDate');
       return;
     }
 
     // 👇 実際にセットされる時間を計算してログに出す
     final tzDate = tz.TZDateTime.from(scheduledDate, tz.local);
-    print('🚀 Scheduling Notification for:');
-    print('   Original: $scheduledDate');
-    print('   TZ Converted: $tzDate (Local Timezone: ${tz.local.name})');
+
 
     // Android用のスタイル設定
     final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
@@ -121,7 +125,6 @@ class NotificationService {
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle, 
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       );
-      print('✅ zonedSchedule called successfully');
     } catch (e) {
       print('🔥 Error in zonedSchedule: $e');
     }

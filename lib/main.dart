@@ -75,8 +75,7 @@ class MyApp extends StatelessWidget {
                   // 2. ログイン済みなら MainScreen へ
                   if (snapshot.hasData) {
                     // ログインユーザーIDでデータをロード
-                    final userId = snapshot.data!.uid;
-                    context.read<TripCubit>().loadMyTrips(userId); 
+                    context.read<TripCubit>().loadMyTrips(); 
 
                     return const MainScreen();
                   }

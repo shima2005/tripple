@@ -1,11 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:new_tripple/features/settings/domain/settings_cubit.dart';
 import 'package:new_tripple/features/settings/domain/settings_state.dart';
-import 'package:new_tripple/services/notification_service.dart';
 import 'package:scroll_to_index/scroll_to_index.dart'; // 👈 追加
 import 'package:visibility_detector/visibility_detector.dart'; // 👈 追加
 import 'package:new_tripple/core/theme/app_colors.dart';
@@ -369,28 +367,7 @@ class _TimelineViewState extends State<TimelineView> {
                           ),
                           Row(
                             children: [
-                              IconButton(
-                                icon: const Icon(Icons.playlist_add_check, color: Colors.blue),
-                                onPressed: () async {
-                                  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
-                                  
-                                  // 予約中の通知を取得
-                                  final pendingNotifications = await flutterLocalNotificationsPlugin.pendingNotificationRequests();
-                                  
-                                  print('=== 予約中の通知一覧 (${pendingNotifications.length}件) ===');
-                                  for (var notification in pendingNotifications) {
-                                    print('ID: ${notification.id}, Title: ${notification.title}, Body: ${notification.body}');
-                                    // ※残念ながら時間は取れませんが、件数があれば「予約自体は成功」しています
-                                  }
-                                  
-                                  if (pendingNotifications.isEmpty) {
-                                    print('❌ 予約されている通知はありません。予約処理でエラーが起きているか、時間が過去判定されています。');
-                                    print('現在時刻: ${DateTime.now()}');
-                                  } else {
-                                    print('✅ OSへの予約は成功しています！これで鳴らないなら省電力設定が怪しいです。');
-                                  }
-                                },
-                                ),
+
                               IconButton(
                                 icon: const Icon(
                                   Icons.attach_money,
