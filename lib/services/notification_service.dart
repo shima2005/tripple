@@ -72,11 +72,21 @@ class NotificationService {
     required String body,
     required DateTime scheduledDate,
   }) async {
-    if (scheduledDate.isBefore(DateTime.now())) return;
+
+    if (scheduledDate.isBefore(DateTime.now())) {
+      print('❌ Skipped schedule because date is in the past: $scheduledDate');
+      return;
+    }
+
+    // 👇 実際にセットされる時間を計算してログに出す
+    final tzDate = tz.TZDateTime.from(scheduledDate, tz.local);
+    print('🚀 Scheduling Notification for:');
+    print('   Original: $scheduledDate');
+    print('   TZ Converted: $tzDate (Local Timezone: ${tz.local.name})');
 
     // Android用のスタイル設定
     final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'trip_reminder_channel',
+      'trip_reminder_channel_v3',
       'Trip Reminders',
       channelDescription: 'Notifications for trip schedule reminders',
       importance: Importance.high,
@@ -98,18 +108,23 @@ class NotificationService {
       ),
     );
 
-    await _notificationsPlugin.zonedSchedule(
-      id,
-      title, // iOS用: プレーンなタイトル
-      body,  // iOS用: プレーンな本文
-      tz.TZDateTime.from(scheduledDate, tz.local),
-      NotificationDetails(
-        android: androidDetails,
-        iOS: const DarwinNotificationDetails(),
-      ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
-    );
+    try {
+      await _notificationsPlugin.zonedSchedule(
+        id,
+        title,
+        body,
+        tzDate, // 👈 変換後の時間を使う
+        NotificationDetails(
+          android: androidDetails,
+          iOS: const DarwinNotificationDetails(),
+        ),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle, 
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+      print('✅ zonedSchedule called successfully');
+    } catch (e) {
+      print('🔥 Error in zonedSchedule: $e');
+    }
   }
 
   // 🚀 常時表示モード
@@ -156,5 +171,26 @@ class NotificationService {
 
   Future<void> cancelOngoingNotification() async {
     await _notificationsPlugin.cancel(_ongoingNotificationId);
+  }
+
+  Future<void> showNotification({
+    required int id,
+    required String title,
+    required String body,
+  }) async {
+
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'trip_reminder_channel_v2', // 👈 ここも v2 に揃える
+      'Trip Reminders',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+
+    await _notificationsPlugin.show(
+      id,
+      title,
+      body,
+      const NotificationDetails(android: androidDetails, iOS: DarwinNotificationDetails()),
+    );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:new_tripple/features/settings/domain/settings_cubit.dart';
 import 'package:new_tripple/features/settings/domain/settings_state.dart';
@@ -369,47 +370,27 @@ class _TimelineViewState extends State<TimelineView> {
                           Row(
                             children: [
                               IconButton(
-                                // ナビゲーションっぽいアイコン
-                                icon: const Icon(Icons.navigation, color: AppColors.primary),
-                                tooltip: 'Start Travel Mode',
+                                icon: const Icon(Icons.playlist_add_check, color: Colors.blue),
                                 onPressed: () async {
-                                  // 1. 権限リクエスト
-                                  await NotificationService().requestPermissions();
-
-                                  // 2. 常時通知を開始 (テストデータ)
-                                  await NotificationService().showOngoingNotification(
-                                    // [Android用] タグ付き
-                                    currentStatus: '<b>移動中</b> 🚌 : 東京駅 ➡ 京都駅',
-                                    nextPlan: '次は 14:00 <font color="#E91E63"><b>金閣寺</b></font> です',
-                                    
-                                    // [iOS用] プレーンテキスト
-                                    plainStatus: '移動中 🚌 : 東京駅 ➡ 京都駅',
-                                    plainPlan: '次は 14:00 金閣寺 です',
-                                  );
+                                  final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
                                   
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('トラベルモードを開始しました！通知を確認してください'))
-                                    );
+                                  // 予約中の通知を取得
+                                  final pendingNotifications = await flutterLocalNotificationsPlugin.pendingNotificationRequests();
+                                  
+                                  print('=== 予約中の通知一覧 (${pendingNotifications.length}件) ===');
+                                  for (var notification in pendingNotifications) {
+                                    print('ID: ${notification.id}, Title: ${notification.title}, Body: ${notification.body}');
+                                    // ※残念ながら時間は取れませんが、件数があれば「予約自体は成功」しています
+                                  }
+                                  
+                                  if (pendingNotifications.isEmpty) {
+                                    print('❌ 予約されている通知はありません。予約処理でエラーが起きているか、時間が過去判定されています。');
+                                    print('現在時刻: ${DateTime.now()}');
+                                  } else {
+                                    print('✅ OSへの予約は成功しています！これで鳴らないなら省電力設定が怪しいです。');
                                   }
                                 },
-                              ),
-                              
-                              // 👇 停止用ボタン (テスト用なので、長押しで消すとか、隣に置くとかでOK)
-                              IconButton(
-                                icon: const Icon(Icons.stop_circle_outlined, color: Colors.grey),
-                                tooltip: 'Stop Travel Mode',
-                                onPressed: () async {
-                                  // 通知を消す
-                                  await NotificationService().cancelOngoingNotification();
-                                  
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('トラベルモードを終了しました'))
-                                    );
-                                  }
-                                },
-                              ),
+                                ),
                               IconButton(
                                 icon: const Icon(
                                   Icons.attach_money,
