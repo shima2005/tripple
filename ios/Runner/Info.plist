@@ -49,6 +49,8 @@
 	<string>旅行のカバー画像を設定するためにライブラリにアクセスします。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>写真を撮影して旅行のカバー画像に設定します。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>現在地を地図上に表示するために位置情報を使用します。</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

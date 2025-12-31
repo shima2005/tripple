@@ -65,6 +65,11 @@ dependencies:
   fl_chart: ^0.69.0
   pdf: ^3.11.3
   printing: ^5.14.2
+  geolocator: ^14.0.2
+  flutter_map_location_marker: ^10.0.2
+  flutter_local_notifications: ^17.0.0
+  timezone: ^0.9.4
+  flutter_timezone: ^5.0.1
 
 
 dev_dependencies:

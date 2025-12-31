@@ -1,9 +1,10 @@
-import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:new_tripple/features/settings/domain/settings_cubit.dart';
+import 'package:new_tripple/features/settings/domain/settings_state.dart';
+import 'package:new_tripple/services/notification_service.dart';
 import 'package:scroll_to_index/scroll_to_index.dart'; // 👈 追加
 import 'package:visibility_detector/visibility_detector.dart'; // 👈 追加
 import 'package:new_tripple/core/theme/app_colors.dart';
@@ -69,336 +70,398 @@ class _TimelineViewState extends State<TimelineView> {
 
   @override
   Widget build(BuildContext context) {
-    
+    // 👇 ここを BlocBuilder から MultiBlocListener + BlocBuilder にアップグレード
+    return MultiBlocListener(
+      listeners: [
+        // Listener 1: Tripデータが読み込まれたら通知を同期
+        BlocListener<TripCubit, TripState>(
+          listenWhen: (previous, current) => 
+             previous.status != TripStatus.loaded && current.status == TripStatus.loaded,
+          listener: (context, tripState) {
+            // トリップデータがロード完了したら、現在の設定を使って通知を予約
+            final settings = context.read<SettingsCubit>().state;
+            context.read<TripCubit>().syncNotifications(settings);
+          },
+        ),
+        // Listener 2: 設定が変更されたら通知を再同期
+        BlocListener<SettingsCubit, SettingsState>(
+          listener: (context, settingsState) {
+            // 設定（通知ON/OFFや時間）が変わったら即反映
+            context.read<TripCubit>().syncNotifications(settingsState);
+          },
+        ),
+      ],
+      child: BlocBuilder<TripCubit, TripState>(
+        builder: (context, state){
+          final currentTrip = state.selectedTrip ?? widget.trip;
+          final daysCount = currentTrip.endDate.difference(currentTrip.startDate).inDays + 1;
 
-    return BlocBuilder<TripCubit, TripState>(
-      builder: (context, state){
-        final currentTrip = state.selectedTrip ?? widget.trip;
-        final daysCount = currentTrip.endDate.difference(currentTrip.startDate).inDays + 1;
-
-        
-        
-        // 👇 2. 設定からHomeTownを取得
-        final homeTown = context.watch<SettingsCubit>().state.homeTown;
-        final homeCountryCode = context.watch<SettingsCubit>().state.homeCountryCode;
-        // 👇 目的地 (Destinationsがあれば最初の場所、なければタイトル)
-        String destinationName = currentTrip.title;
-        String? destinationCountryCode;
-
-        if (currentTrip.destinations.isNotEmpty) {
-          // 滞在日数が一番長い場所を探す
-          // reduceを使って比較: (curr, next) => currの方が長ければcurr、そうでなければnext
-          final mainDest = currentTrip.destinations.reduce((curr, next) {
-            final currDays = curr.stayDays ?? 0;
-            final nextDays = next.stayDays ?? 0;
-            return currDays >= nextDays ? curr : next;
-          });
           
-          destinationName = mainDest.name;
-          destinationCountryCode = mainDest.countryCode; // 国コードも取得
-        }
+          
+          // 👇 2. 設定からHomeTownを取得
+          final homeTown = context.watch<SettingsCubit>().state.homeTown;
+          final homeCountryCode = context.watch<SettingsCubit>().state.homeCountryCode;
+          // 👇 目的地 (Destinationsがあれば最初の場所、なければタイトル)
+          String destinationName = currentTrip.title;
+          String? destinationCountryCode;
 
-        return Scaffold(
-          backgroundColor: AppColors.background,
-          body: Stack(
-            children: [
-              CustomScrollView(
-                controller: _scrollController, 
-                slivers: [
-                  // 1. ヘッダーエリア
-                  SliverToBoxAdapter(
-                    child: Stack(
-                      children: [
-                        // A. 背景画像
-                        Positioned(
-                          top: 0, left: 0, right: 0, height: 280,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              _buildHeaderImage(currentTrip),
-                              Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.black.withOpacity(0.3),
-                                      Colors.transparent,
-                                      AppColors.background,
-                                    ],
-                                    stops: const [0.0, 0.6, 1.0],
+          if (currentTrip.destinations.isNotEmpty) {
+            // 滞在日数が一番長い場所を探す
+            // reduceを使って比較: (curr, next) => currの方が長ければcurr、そうでなければnext
+            final mainDest = currentTrip.destinations.reduce((curr, next) {
+              final currDays = curr.stayDays ?? 0;
+              final nextDays = next.stayDays ?? 0;
+              return currDays >= nextDays ? curr : next;
+            });
+            
+            destinationName = mainDest.name;
+            destinationCountryCode = mainDest.countryCode; // 国コードも取得
+          }
+
+          return Scaffold(
+            backgroundColor: AppColors.background,
+            body: Stack(
+              children: [
+                CustomScrollView(
+                  controller: _scrollController, 
+                  slivers: [
+                    // 1. ヘッダーエリア
+                    SliverToBoxAdapter(
+                      child: Stack(
+                        children: [
+                          // A. 背景画像
+                          Positioned(
+                            top: 0, left: 0, right: 0, height: 280,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                _buildHeaderImage(currentTrip),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Colors.black.withOpacity(0.3),
+                                        Colors.transparent,
+                                        AppColors.background,
+                                      ],
+                                      stops: const [0.0, 0.6, 1.0],
+                                    ),
                                   ),
                                 ),
+                              ],
+                            ),
+                          ),
+
+                          // B. コンテンツ
+                          Column(
+                            children: [
+                              const SizedBox(height: 60),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      currentTrip.title,
+                                      style: AppTextStyles.h2.copyWith(
+                                        color: Colors.white,
+                                        fontSize: 24,
+                                        shadows: [const Shadow(color: Colors.black45, blurRadius: 8, offset: Offset(0, 2))],
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.25),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.white.withOpacity(0.3)),
+                                      ),
+                                      child: Text(
+                                        '${DateFormat('yyyy/MM/dd').format(currentTrip.startDate)} - ${DateFormat('MM/dd').format(currentTrip.endDate)}',
+                                        style: AppTextStyles.label.copyWith(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
+                              const SizedBox(height: 24),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                child: SmartTicket(
+                                  trip: currentTrip, 
+                                  mode: TicketMode.summary,
+                                  fromLocation: homeTown,    // 設定したホームタウン
+                                  fromCountryCode: homeCountryCode,
+                                  toLocation: destinationName,
+                                  toCountryCode: destinationCountryCode,   // 旅行先
+                                ),
+                              ),
+                              const SizedBox(height: 24),
                             ],
                           ),
-                        ),
-
-                        // B. コンテンツ
-                        Column(
-                          children: [
-                            const SizedBox(height: 60),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              child: Column(
-                                children: [
-                                  Text(
-                                    currentTrip.title,
-                                    style: AppTextStyles.h2.copyWith(
-                                      color: Colors.white,
-                                      fontSize: 24,
-                                      shadows: [const Shadow(color: Colors.black45, blurRadius: 8, offset: Offset(0, 2))],
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.25),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: Colors.white.withOpacity(0.3)),
-                                    ),
-                                    child: Text(
-                                      '${DateFormat('yyyy/MM/dd').format(currentTrip.startDate)} - ${DateFormat('MM/dd').format(currentTrip.endDate)}',
-                                      style: AppTextStyles.label.copyWith(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: SmartTicket(
-                                trip: currentTrip, 
-                                mode: TicketMode.summary,
-                                fromLocation: homeTown,    // 設定したホームタウン
-                                fromCountryCode: homeCountryCode,
-                                toLocation: destinationName,
-                                toCountryCode: destinationCountryCode,   // 旅行先
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
 
-                  // 2. 吸い付くDayタブ (機能強化！)
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: _DayTabsDelegate(
-                      daysCount: daysCount,
-                      startDate: currentTrip.startDate,
-                      selectedIndex: _selectedDayIndex, // 👈 現在の選択状態を渡す
-                      onTabTap: (dayIndex) {
-                        _scrollToDay(dayIndex); // 👈 タップ時のジャンプ処理
-                      },
+                    // 2. 吸い付くDayタブ (機能強化！)
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: _DayTabsDelegate(
+                        daysCount: daysCount,
+                        startDate: currentTrip.startDate,
+                        selectedIndex: _selectedDayIndex, // 👈 現在の選択状態を渡す
+                        onTabTap: (dayIndex) {
+                          _scrollToDay(dayIndex); // 👈 タップ時のジャンプ処理
+                        },
+                      ),
                     ),
-                  ),
 
-                  // 3. タイムライン
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
-                    sliver: BlocBuilder<TripCubit, TripState>(
-                      builder: (context, state) {
-                        if (state.status == TripStatus.loading) {
-                          return const SliverToBoxAdapter(
-                            child: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-
-                        if (state.scheduleItems.isEmpty) {
-                          // 👇 SliverToBoxAdapter だと上に寄っちゃうので、SliverFillRemainingに変更
-                          return const SliverFillRemaining(
-                            hasScrollBody: false, // スクロール不要
-                            child: Center(
-                              child: TrippleEmptyState(
-                                title: 'Start Planning',
-                                message: 'Tap the "+" button to add spots manually, or ask AI to suggest a plan!',
-                                icon: Icons.map_rounded,
-                                accentColor: AppColors.accent,
-                              ),
-                            ),
-                          );
-                        }
-
-                        // 「各Dayがリストの何番目から始まるか」を計算するマップを作成
-                        // key: dayIndex, value: listIndex
-                        final dayStartIndexMap = <int, int>{};
-                        for (int i = 0; i < state.scheduleItems.length; i++) {
-                          final item = state.scheduleItems[i];
-                          int dayIndex = 0;
-                          if (item is ScheduledItem) dayIndex = item.dayIndex;
-                          else if (item is RouteItem) dayIndex = item.dayIndex;
-                          
-                          // そのDayがまだマップになければ、今のindexが開始位置
-                          if (!dayStartIndexMap.containsKey(dayIndex)) {
-                            dayStartIndexMap[dayIndex] = i;
+                    // 3. タイムライン
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+                      sliver: BlocBuilder<TripCubit, TripState>(
+                        builder: (context, state) {
+                          if (state.status == TripStatus.loading) {
+                            return const SliverToBoxAdapter(
+                              child: Center(child: CircularProgressIndicator()),
+                            );
                           }
-                        }
-                        // コントローラーにマップを保存できないので、State内で管理するか、
-                        // ここで _scrollToDay 用に保持しておく必要があるが、
-                        // 今回は _scrollToDay 内で再検索する簡易実装にするためマップは不要。
-                        // むしろここでは「各日の先頭アイテム」にタグ付けをすることに集中する。
 
-                        return SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final item = state.scheduleItems[index];
-                              final isLast = index == state.scheduleItems.length - 1;
-                              
-                              int itemDayIndex = 0;
-                              if (item is ScheduledItem) itemDayIndex = item.dayIndex;
-                              else if (item is RouteItem) itemDayIndex = item.dayIndex;
+                          if (state.scheduleItems.isEmpty) {
+                            // 👇 SliverToBoxAdapter だと上に寄っちゃうので、SliverFillRemainingに変更
+                            return const SliverFillRemaining(
+                              hasScrollBody: false, // スクロール不要
+                              child: Center(
+                                child: TrippleEmptyState(
+                                  title: 'Start Planning',
+                                  message: 'Tap the "+" button to add spots manually, or ask AI to suggest a plan!',
+                                  icon: Icons.map_rounded,
+                                  accentColor: AppColors.accent,
+                                ),
+                              ),
+                            );
+                          }
 
-                              // アイテムウィジェット
-                              Widget child = TimelineItemWidget(
-                                item: item,
-                                isLast: isLast,
-                                // 👇 引数で item を受け取るように変更
-                                onTap: (tappedItem) {
-                                  if (tappedItem is ScheduledItem) {
-                                    // 滞在の編集
-                                    showModalBottomSheet(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      backgroundColor: Colors.transparent,
-                                      builder: (context) => ScheduleEditModal(
-                                        trip: currentTrip,
-                                        item: tappedItem,
-                                      ),
-                                    );
-                                  } else if (tappedItem is RouteItem) {
-                                    // 移動の編集 (新しく作ったModal！)
-                                    showModalBottomSheet(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      backgroundColor: Colors.transparent,
-                                      builder: (context) => RouteEditModal(
-                                        tripId: currentTrip.id,
-                                        route: tappedItem,
-                                        mainTransport: currentTrip.mainTransport,
-                                      ),
-                                    );
-                                  }
-                                },
-                                onMapTap: (scheduledItem) {
-                                  // 緯度経度があれば渡す
-                                  if (scheduledItem.latitude != null && scheduledItem.longitude != null) {
-                                    widget.onGoToMap(
-                                      LatLng(scheduledItem.latitude!, scheduledItem.longitude!)
-                                    );
-                                  } else {
-                                    // なければ null (全体表示になる)
-                                    widget.onGoToMap(null);
-                                  }
-                                },
-                              );
+                          // 「各Dayがリストの何番目から始まるか」を計算するマップを作成
+                          // key: dayIndex, value: listIndex
+                          final dayStartIndexMap = <int, int>{};
+                          for (int i = 0; i < state.scheduleItems.length; i++) {
+                            final item = state.scheduleItems[i];
+                            int dayIndex = 0;
+                            if (item is ScheduledItem) dayIndex = item.dayIndex;
+                            else if (item is RouteItem) dayIndex = item.dayIndex;
+                            
+                            // そのDayがまだマップになければ、今のindexが開始位置
+                            if (!dayStartIndexMap.containsKey(dayIndex)) {
+                              dayStartIndexMap[dayIndex] = i;
+                            }
+                          }
+                          // コントローラーにマップを保存できないので、State内で管理するか、
+                          // ここで _scrollToDay 用に保持しておく必要があるが、
+                          // 今回は _scrollToDay 内で再検索する簡易実装にするためマップは不要。
+                          // むしろここでは「各日の先頭アイテム」にタグ付けをすることに集中する。
 
-                              // ★重要: AutoScrollTag と VisibilityDetector でラップ
-                              return AutoScrollTag(
-                                key: ValueKey(index),
-                                controller: _scrollController,
-                                index: index,
-                                child: VisibilityDetector(
-                                  key: Key('item-$index'),
-                                  onVisibilityChanged: (info) {
-                                    // タブタップによるスクロール中は更新しない
-                                    if (_isTabScrolling) return;
+                          return SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final item = state.scheduleItems[index];
+                                final isLast = index == state.scheduleItems.length - 1;
+                                
+                                int itemDayIndex = 0;
+                                if (item is ScheduledItem) itemDayIndex = item.dayIndex;
+                                else if (item is RouteItem) itemDayIndex = item.dayIndex;
 
-                                    // アイテムが50%以上見えていて、かつその日の先頭アイテムならタブを更新
-                                    if (info.visibleFraction > 0.5) {
-                                      // 前のアイテムとDayが違う、または最初のアイテムの場合のみ更新
-                                      // (簡易的に、今のアイテムのdayIndexを採用する)
-                                      if (_selectedDayIndex != itemDayIndex) {
-                                        setState(() {
-                                          _selectedDayIndex = itemDayIndex;
-                                        });
-                                      }
+                                // アイテムウィジェット
+                                Widget child = TimelineItemWidget(
+                                  item: item,
+                                  isLast: isLast,
+                                  // 👇 引数で item を受け取るように変更
+                                  onTap: (tappedItem) {
+                                    if (tappedItem is ScheduledItem) {
+                                      // 滞在の編集
+                                      showModalBottomSheet(
+                                        context: context,
+                                        isScrollControlled: true,
+                                        backgroundColor: Colors.transparent,
+                                        builder: (context) => ScheduleEditModal(
+                                          trip: currentTrip,
+                                          item: tappedItem,
+                                        ),
+                                      );
+                                    } else if (tappedItem is RouteItem) {
+                                      // 移動の編集 (新しく作ったModal！)
+                                      showModalBottomSheet(
+                                        context: context,
+                                        isScrollControlled: true,
+                                        backgroundColor: Colors.transparent,
+                                        builder: (context) => RouteEditModal(
+                                          tripId: currentTrip.id,
+                                          route: tappedItem,
+                                          mainTransport: currentTrip.mainTransport,
+                                        ),
+                                      );
                                     }
                                   },
-                                  child: child,
-                                ),
-                              );
-                            },
-                            childCount: state.scheduleItems.length,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
+                                  onMapTap: (scheduledItem) {
+                                    // 緯度経度があれば渡す
+                                    if (scheduledItem.latitude != null && scheduledItem.longitude != null) {
+                                      widget.onGoToMap(
+                                        LatLng(scheduledItem.latitude!, scheduledItem.longitude!)
+                                      );
+                                    } else {
+                                      // なければ null (全体表示になる)
+                                      widget.onGoToMap(null);
+                                    }
+                                  },
+                                );
 
-              // 4. 戻るボタン & メニュー
-              Positioned(
-                top: 0, left: 0, right: 0,
-                child: SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 22, shadows: [Shadow(color: Colors.black38, blurRadius: 4)]),
-                          onPressed: widget.onBack,
-                        ),
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(
-                                Icons.attach_money,
-                                color: Colors.white,
-                                size: 24,
-                                shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
-                              ),
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(builder: (context) => ExpenseStatsScreen(trip: currentTrip))
+                                // ★重要: AutoScrollTag と VisibilityDetector でラップ
+                                return AutoScrollTag(
+                                  key: ValueKey(index),
+                                  controller: _scrollController,
+                                  index: index,
+                                  child: VisibilityDetector(
+                                    key: Key('item-$index'),
+                                    onVisibilityChanged: (info) {
+                                      // タブタップによるスクロール中は更新しない
+                                      if (_isTabScrolling) return;
+
+                                      // アイテムが50%以上見えていて、かつその日の先頭アイテムならタブを更新
+                                      if (info.visibleFraction > 0.5) {
+                                        // 前のアイテムとDayが違う、または最初のアイテムの場合のみ更新
+                                        // (簡易的に、今のアイテムのdayIndexを採用する)
+                                        if (_selectedDayIndex != itemDayIndex) {
+                                          setState(() {
+                                            _selectedDayIndex = itemDayIndex;
+                                          });
+                                        }
+                                      }
+                                    },
+                                    child: child,
+                                  ),
                                 );
                               },
+                              childCount: state.scheduleItems.length,
                             ),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.print_rounded,
-                                color: Colors.white,
-                                size: 24,
-                                shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+
+                // 4. 戻るボタン & メニュー
+                Positioned(
+                  top: 0, left: 0, right: 0,
+                  child: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 22, shadows: [Shadow(color: Colors.black38, blurRadius: 4)]),
+                            onPressed: widget.onBack,
+                          ),
+                          Row(
+                            children: [
+                              IconButton(
+                                // ナビゲーションっぽいアイコン
+                                icon: const Icon(Icons.navigation, color: AppColors.primary),
+                                tooltip: 'Start Travel Mode',
+                                onPressed: () async {
+                                  // 1. 権限リクエスト
+                                  await NotificationService().requestPermissions();
+
+                                  // 2. 常時通知を開始 (テストデータ)
+                                  await NotificationService().showOngoingNotification(
+                                    // [Android用] タグ付き
+                                    currentStatus: '<b>移動中</b> 🚌 : 東京駅 ➡ 京都駅',
+                                    nextPlan: '次は 14:00 <font color="#E91E63"><b>金閣寺</b></font> です',
+                                    
+                                    // [iOS用] プレーンテキスト
+                                    plainStatus: '移動中 🚌 : 東京駅 ➡ 京都駅',
+                                    plainPlan: '次は 14:00 金閣寺 です',
+                                  );
+                                  
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('トラベルモードを開始しました！通知を確認してください'))
+                                    );
+                                  }
+                                },
                               ),
-                              onPressed: () async {
-                                final trip = state.selectedTrip!;
-                                final items = state.scheduleItems; // Cubitが持ってるソート済みリスト
-                                
-                                // 処理中はローディング出すなどしてもいいけど、PrintingパッケージがUI出してくれるので直呼びでOK
-                                await PdfService().printTripPdf(trip, items);
-                              }
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.more_horiz_rounded, color: Colors.white, size: 28, shadows: [Shadow(color: Colors.black38, blurRadius: 4)]),
-                              onPressed: () async {
-                                final result = await showModalBottomSheet(
-                                  context: context,
-                                  isScrollControlled: true,
-                                  backgroundColor: Colors.transparent,
-                                  builder: (context) => TripEditModal(trip: currentTrip),
-                                );
-                                if (result == true) widget.onBack();
-                              },
-                            ),
-                          ],
-                        )
-                      ],
+                              
+                              // 👇 停止用ボタン (テスト用なので、長押しで消すとか、隣に置くとかでOK)
+                              IconButton(
+                                icon: const Icon(Icons.stop_circle_outlined, color: Colors.grey),
+                                tooltip: 'Stop Travel Mode',
+                                onPressed: () async {
+                                  // 通知を消す
+                                  await NotificationService().cancelOngoingNotification();
+                                  
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('トラベルモードを終了しました'))
+                                    );
+                                  }
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.attach_money,
+                                  color: Colors.white,
+                                  size: 24,
+                                  shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
+                                ),
+                                onPressed: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(builder: (context) => ExpenseStatsScreen(trip: currentTrip))
+                                  );
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.print_rounded,
+                                  color: Colors.white,
+                                  size: 24,
+                                  shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
+                                ),
+                                onPressed: () async {
+                                  final trip = state.selectedTrip!;
+                                  final items = state.scheduleItems; // Cubitが持ってるソート済みリスト
+                                  
+                                  // 処理中はローディング出すなどしてもいいけど、PrintingパッケージがUI出してくれるので直呼びでOK
+                                  await PdfService().printTripPdf(trip, items);
+                                }
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.more_horiz_rounded, color: Colors.white, size: 28, shadows: [Shadow(color: Colors.black38, blurRadius: 4)]),
+                                onPressed: () async {
+                                  final result = await showModalBottomSheet(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    backgroundColor: Colors.transparent,
+                                    builder: (context) => TripEditModal(trip: currentTrip),
+                                  );
+                                  if (result == true) widget.onBack();
+                                },
+                              ),
+                            ],
+                          )
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        );
-      }
+              ],
+            ),
+          );
+        }
+      )
     );
   }
 

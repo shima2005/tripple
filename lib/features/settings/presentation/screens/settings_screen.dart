@@ -1,3 +1,6 @@
+// lib/features/settings/presentation/screens/settings_screen.dart
+
+import 'package:flutter/cupertino.dart'; // 👈 追加
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -22,7 +25,6 @@ class SettingsScreen extends StatelessWidget {
         
         return Scaffold(
           backgroundColor: AppColors.background,
-          // 👇 1. SliverAppBarをやめて、SafeArea + SingleChildScrollView の構成に変更
           body: SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
@@ -30,7 +32,6 @@ class SettingsScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 16),
-                  // ヘッダータイトル
                   Padding(
                     padding: const EdgeInsets.only(left: 8),
                     child: Text(
@@ -40,15 +41,15 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // 1. プロフィール (強化版)
+                  // 1. Account
                   _SectionHeader(title: 'Account'),
                   if (user != null)
                     _UserProfileCard(user: user, isGuest: state.isGuest),
                   
                   const SizedBox(height: 24),
 
-                  // 2. ソーシャル
-                  _SectionHeader(title: 'Social'),
+                  // 2. Social & Notifications
+                  _SectionHeader(title: 'Social & Notifications'),
                   _SettingsTile(
                     icon: Icons.group_rounded,
                     title: 'Friends',
@@ -58,25 +59,71 @@ class SettingsScreen extends StatelessWidget {
                       builder: (context) => const FriendsListModal(),
                     ),
                   ),
+
+                  // 通知メインスイッチ
                   _SettingsTile(
-                    icon: Icons.notifications_none_rounded,
-                    title: 'Notifications',
+                    icon: Icons.notifications_active_rounded,
+                    title: 'Allow Notifications',
                     trailing: Switch(
-                      value: true, 
+                      value: state.isNotificationEnabled,
                       activeColor: AppColors.primary,
-                      onChanged: (val) {}, 
+                      onChanged: (val) {
+                        context.read<SettingsCubit>().toggleNotification(val);
+                      },
                     ),
                   ),
-                  
+
+                  // 詳細設定
+                  if (state.isNotificationEnabled) ...[
+                    // 常時通知
+                    Padding(
+                      padding: const EdgeInsets.only(left: 16, bottom: 8),
+                      child: _SettingsTile(
+                        icon: Icons.navigation_rounded,
+                        title: 'Ongoing Travel Mode',
+                        trailing: Switch(
+                          value: state.isOngoingNotificationEnabled,
+                          activeColor: AppColors.primary,
+                          onChanged: (val) {
+                            context.read<SettingsCubit>().toggleOngoingNotification(val);
+                          },
+                        ),
+                      ),
+                    ),
+                    
+                    // リマインダー
+                    Padding(
+                      padding: const EdgeInsets.only(left: 16, bottom: 8),
+                      child: _SettingsTile(
+                        icon: Icons.alarm_rounded,
+                        title: 'Schedule Reminder',
+                        trailing: Switch(
+                          value: state.isReminderEnabled,
+                          activeColor: AppColors.primary,
+                          onChanged: (val) {
+                            context.read<SettingsCubit>().toggleReminder(val);
+                          },
+                        ),
+                      ),
+                    ),
+
+                    // リマインダー時間 (CupertinoPickerで選択)
+                    if (state.isReminderEnabled)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 32, bottom: 12),
+                        child: _SettingsTile(
+                          icon: Icons.timer_outlined,
+                          title: 'Remind me before...',
+                          value: '${state.reminderMinutesBefore} min',
+                          onTap: () => _showReminderTimePicker(context, state.reminderMinutesBefore),
+                        ),
+                      ),
+                  ],
+
                   const SizedBox(height: 24),
 
-                  // 3. ホーム設定
+                  // 3. My Base
                   _SectionHeader(title: 'My Base 🏠'),
-                  Text(
-                    'Set your home to exclude it from travel stats.',
-                    style: AppTextStyles.label.copyWith(color: Colors.grey),
-                  ),
-                  const SizedBox(height: 8),
                   _CountrySelector(
                     selectedCode: state.homeCountryCode,
                     onChanged: (code) => context.read<SettingsCubit>().updateHomeCountry(code),
@@ -88,7 +135,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
 
-                  // 4. システム
+                  // 4. System
                   _SectionHeader(title: 'System'),
                   _SettingsTile(
                     icon: Icons.language_rounded,
@@ -104,7 +151,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
                   
-                  // 5. アプリ情報
+                  // 5. About
                   _SectionHeader(title: 'About App'),
                   _SettingsTile(
                     icon: Icons.description_outlined,
@@ -135,7 +182,7 @@ class SettingsScreen extends StatelessWidget {
 
                   const SizedBox(height: 40),
                   
-                  // ログアウト
+                  // Log Out
                   SizedBox(
                     width: double.infinity,
                     child: TextButton.icon(
@@ -151,12 +198,11 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
 
-                  // 👇 2. アカウント削除ボタン (下線の隙間を調整)
+                  // Delete Account
                   Center(
                     child: TextButton(
                       onPressed: () => _showDeleteAccountDialog(context),
                       child: Container(
-                        // パディングで文字と線の隙間を作る
                         padding: const EdgeInsets.only(bottom: 2), 
                         decoration: BoxDecoration(
                           border: Border(
@@ -171,7 +217,7 @@ class SettingsScreen extends StatelessWidget {
                           style: AppTextStyles.label.copyWith(
                             color: AppColors.error.withValues(alpha: 0.7),
                             fontSize: 12,
-                            decoration: TextDecoration.none, // デフォルトの下線は消す
+                            decoration: TextDecoration.none,
                           ),
                         ),
                       ),
@@ -188,7 +234,67 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  // --- Helpers (変更なし) ---
+  // 👇 CupertinoPicker (iOS風ドラムロール) で実装
+  void _showReminderTimePicker(BuildContext context, int currentMinutes) {
+    // 選択肢: 1〜10分、15分、20分、30分
+    final options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30];
+
+    // 現在の設定値がリストのどこにあるか探す (なければデフォルト15分)
+    int initialIndex = options.indexOf(currentMinutes);
+    if (initialIndex == -1) {
+      initialIndex = options.indexOf(15);
+      if (initialIndex == -1) initialIndex = 10; // 15分もなければ適当な位置へ
+    }
+
+    // スクロール中の値を保持する変数 (初期値セット)
+    int tempSelectedMinutes = options[initialIndex];
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => Container(
+        height: 250,
+        color: Colors.white,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 190,
+              child: CupertinoPicker(
+                backgroundColor: Colors.white,
+                itemExtent: 32, // 項目の高さ
+                scrollController: FixedExtentScrollController(initialItem: initialIndex),
+                onSelectedItemChanged: (index) {
+                  tempSelectedMinutes = options[index];
+                },
+                children: options.map((min) => Center(
+                  child: Text(
+                    '$min minutes',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.textPrimary,
+                      fontSize: 20,
+                    ),
+                  ),
+                )).toList(),
+              ),
+            ),
+            // Doneボタン
+            CupertinoButton(
+              child: const Text(
+                'Done', 
+                style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)
+              ),
+              onPressed: () {
+                // Cubitに保存して閉じる
+                context.read<SettingsCubit>().updateReminderTime(tempSelectedMinutes);
+                Navigator.pop(context);
+              },
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- Helpers (他は変更なし) ---
 
   void _showLanguageSelector(BuildContext context) {
     showModalBottomSheet(
@@ -314,7 +420,7 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-// --- Sub Widgets ---
+// --- Sub Widgets (変更なし) ---
 
 class _SectionHeader extends StatelessWidget {
   final String title;
@@ -425,13 +531,15 @@ class _CountrySelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final cubit = context.read<SettingsCubit>();
     final countries = cubit.countryList;
+    final normalizedValue = selectedCode?.toLowerCase();
+    final bool valueExists = countries.any((c) => c['code']?.toLowerCase() == normalizedValue);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: selectedCode,
+          value: valueExists ? normalizedValue : null, 
           hint: Text('Select Home Country', style: AppTextStyles.bodyMedium),
           isExpanded: true,
           icon: const Icon(Icons.keyboard_arrow_down_rounded),
@@ -439,7 +547,7 @@ class _CountrySelector extends StatelessWidget {
           items: [
             const DropdownMenuItem(value: null, child: Text('None (Include all in stats)')),
             ...countries.map((c) => DropdownMenuItem(
-              value: c['code'],
+              value: c['code']?.toLowerCase(),
               child: Row(
                 children: [
                   Text(c['code']!.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),

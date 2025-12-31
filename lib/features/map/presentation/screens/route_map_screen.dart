@@ -1,6 +1,9 @@
+// lib/features/map/presentation/screens/route_map_screen.dart
+
+import 'dart:async'; // Stream用
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart'; // flutter_map
-import 'package:latlong2/latlong.dart' hide Path; // 座標用
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import 'package:new_tripple/core/theme/app_colors.dart';
 import 'package:new_tripple/core/theme/app_text_styles.dart';
 import 'package:new_tripple/models/trip.dart';
@@ -8,11 +11,14 @@ import 'package:new_tripple/models/schedule_item.dart';
 import 'package:new_tripple/models/route_item.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
+// 👇 位置情報パッケージ
+import 'package:flutter_map_location_marker/flutter_map_location_marker.dart';
+import 'package:geolocator/geolocator.dart';
 
 class RouteMapScreen extends StatefulWidget {
   final Trip trip;
   final List<ScheduledItem> scheduleItems;
-  final List<RouteItem> routeItems; // 👈 追加
+  final List<RouteItem> routeItems;
   final VoidCallback onBackTap;
   final LatLng? initialFocus;
 
@@ -20,7 +26,7 @@ class RouteMapScreen extends StatefulWidget {
     super.key,
     required this.trip,
     required this.scheduleItems,
-    required this.routeItems, // 👈 追加
+    required this.routeItems,
     required this.onBackTap,
     this.initialFocus
   });
@@ -32,15 +38,35 @@ class RouteMapScreen extends StatefulWidget {
 class _RouteMapScreenState extends State<RouteMapScreen> {
   final MapController _mapController = MapController();
   
-  // フィルタリング用: nullなら全日程表示、数値ならそのDayIndexのみ表示
+  // フィルタリング用
   int? _selectedDayIndex;
+
+  // 👇 現在地追従の管理変数
+  late AlignOnUpdate _alignPositionOnUpdate;
 
   @override
   void initState() {
     super.initState();
+    // 初期値は「追従しない (手動操作モード)」
+    _alignPositionOnUpdate = AlignOnUpdate.never;
+    
+    _checkPermission(); // 位置情報の許可を確認
   }
 
-  // 👇 親から新しいフォーカス地点が渡されたら、そこへ移動する処理
+  Future<void> _checkPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) return;
+    }
+  }
+
   @override
   void didUpdateWidget(RouteMapScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -58,48 +84,46 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   }
 
   void _moveToFocus(LatLng point) {
-    _mapController.move(point, 15.0); // ズームレベル15で移動
+    _mapController.move(point, 15.0);
   }
 
   void _fitBounds() {
-    // 1. 座標を持つ「滞在先 (ScheduledItem)」だけを抽出
-    // (RouteItemの経由地などは含めない方が、メインの観光エリアにフォーカスしやすい)
-    final points = widget.scheduleItems
-        .where((item) => item.latitude != null && item.longitude != null)
+    final visiblePoints = widget.scheduleItems
+        .where((item) {
+           final isDayMatch = _selectedDayIndex == null || item.dayIndex == _selectedDayIndex;
+           return item.latitude != null && item.longitude != null && isDayMatch;
+        })
         .map((item) => LatLng(item.latitude!, item.longitude!))
         .toList();
 
-    if (points.isEmpty) return;
+    if (visiblePoints.isEmpty) return;
 
-    // 2. 全ての点が収まる範囲 (Bounds) を計算
-    final bounds = LatLngBounds.fromPoints(points);
+    final bounds = LatLngBounds.fromPoints(visiblePoints);
     
-    // 3. カメラをその範囲に合わせる (paddingで少し余白を持たせる)
     _mapController.fitCamera(
       CameraFit.bounds(
         bounds: bounds,
-        padding: const EdgeInsets.all(50), // 上下左右に50pxの余白
+        padding: const EdgeInsets.all(50),
       ),
     );
+    // ズームしたら追従モードは解除
+    if (mounted) setState(() => _alignPositionOnUpdate = AlignOnUpdate.never);
   }
 
   @override
   Widget build(BuildContext context) {
-    // 1. 表示対象のアイテムをフィルタリング (ScheduledItem)
     final visibleItems = widget.scheduleItems.where((item) {
       final hasLocation = item.latitude != null && item.longitude != null;
       final isDayMatch = _selectedDayIndex == null || item.dayIndex == _selectedDayIndex;
       return hasLocation && isDayMatch;
     }).toList();
 
-    // 2. 表示対象のルートをフィルタリング (RouteItem)
     final visibleRoutes = widget.routeItems.where((route) {
       final hasPolyline = route.polyline != null && route.polyline!.isNotEmpty;
       final isDayMatch = _selectedDayIndex == null || route.dayIndex == _selectedDayIndex;
       return hasPolyline && isDayMatch;
     }).toList();
 
-    // 3. 日付ごとのカラーパレット
     final dayColors = [
       AppColors.primary,
       AppColors.accent,
@@ -123,32 +147,29 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
-              initialCenter: widget.initialFocus?? const LatLng(35.6812, 139.7671), // 初期値は東京
+              initialCenter: widget.initialFocus ?? const LatLng(35.6812, 139.7671),
               initialZoom: widget.initialFocus != null ? 15.0 : 5.0,
-              onMapReady: _onMapReady
+              onMapReady: _onMapReady,
+              // 手動で動かしたら追従解除
+              onPositionChanged: (camera, hasGesture) {
+                if (hasGesture) {
+                  setState(() => _alignPositionOnUpdate = AlignOnUpdate.never);
+                }
+              },
             ),
             
             children: [
-              // A. タイルレイヤー (OpenStreetMap)
+              // A. Mapboxタイル (元のコード)
               TileLayer(
-                // Mapboxのスタイル付きタイルURL
-                // mapbox/light-v11: シンプルなライトモード
-                // @2x: Retinaディスプレイ対応（これがないとボヤけます）
                 urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token={accessToken}',
-                
-                // トークンを渡す
                 additionalOptions: const {
-                  'accessToken': 'pk.eyJ1Ijoic2hpbWEyMDA1IiwiYSI6ImNtaW96bzBqaDAwZHYzZnB3anY1b2p5cGMifQ.7u4lEuhFpc_GhqaiBrUmTQ', // 👇 RoutingServiceと同じトークンを貼る！
+                  'accessToken': 'pk.eyJ1Ijoic2hpbWEyMDA1IiwiYSI6ImNtaW96bzBqaDAwZHYzZnB3anY1b2p5cGMifQ.7u4lEuhFpc_GhqaiBrUmTQ', 
                 },
-                
                 userAgentPackageName: 'com.example.new_tripple',
-
                 tileProvider: CancellableNetworkTileProvider(),
               ),
 
-              // B. ルート線 (PolylineLayer)
-              // 保存されたPolyline文字列をデコードして表示
-              // B. ルート線 (PolylineLayer)
+              // B. ルート線
               PolylineLayer(
                 polylines: [
                   for (var route in visibleRoutes)
@@ -157,17 +178,16 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                         points: PolylinePoints.decodePolyline(route.polyline!)
                             .map((e) => LatLng(e.latitude, e.longitude))
                             .toList(),
-                            
                         strokeWidth: 4.0,
                         color: getDayColor(route.dayIndex).withValues(alpha: 0.7),
                       ),
                 ],
               ),
 
-              // C. ピン (Marker)
+              // C. ピン
               MarkerLayer(
                 markers: visibleItems.asMap().entries.map((entry) {
-                  final index = entry.key; // 表示順 (0, 1, 2...)
+                  final index = entry.key;
                   final item = entry.value;
                   final color = getDayColor(item.dayIndex);
 
@@ -175,15 +195,34 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                     point: LatLng(item.latitude!, item.longitude!),
                     width: 40,
                     height: 40,
-                    child: _buildPin(index + 1, color), // ①, ②...
+                    child: _buildPin(index + 1, color),
                   );
                 }).toList(),
+              ),
+
+              // 👇 D. 現在地表示レイヤー (修正版)
+              CurrentLocationLayer(
+                alignPositionOnUpdate: _alignPositionOnUpdate,
+                alignDirectionOnUpdate: AlignOnUpdate.never, // 方角追従はしない
+                
+                // ★重要: 方角ストリームを無効化してエラーを防ぐ
+                headingStream: Stream.value(null),
+
+                style: const LocationMarkerStyle(
+                  marker: DefaultLocationMarker(
+                    color: AppColors.primary,
+                    child: Icon(Icons.navigation, color: Colors.white, size: 16),
+                  ),
+                  markerSize: Size(40, 40),
+                  accuracyCircleColor: Color.fromRGBO(33, 150, 243, 0.2),
+                  showHeadingSector: false, // セクター表示もOFF
+                ),
               ),
             ],
           ),
 
           // -------------------------------------------------------
-          // 2. 戻るボタン (左上)
+          // 2. 戻るボタン
           // -------------------------------------------------------
           Positioned(
             top: 0,
@@ -205,7 +244,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           ),
 
           // -------------------------------------------------------
-          // 3. 凡例 & フィルタ (右上)
+          // 3. 凡例 & フィルタ
           // -------------------------------------------------------
           Positioned(
             top: 0,
@@ -215,7 +254,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                 margin: const EdgeInsets.all(16),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.9), // 半透明で見やすく
+                  color: Colors.white.withValues(alpha: 0.9),
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 10)],
                 ),
@@ -225,19 +264,15 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                   children: [
                     Text("Day Filter", style: AppTextStyles.label),
                     const SizedBox(height: 8),
-                    
-                    // "All Days" ボタン
                     _buildLegendItem(
                       label: "All Days",
                       color: Colors.black,
                       isSelected: _selectedDayIndex == null,
                       onTap: () {
                         setState(() => _selectedDayIndex = null);
-                        _fitBounds(); // ズーム再調整
+                        _fitBounds();
                       },
                     ),
-
-                    // 各Dayのボタン
                     ...List.generate(
                       widget.trip.endDate.difference(widget.trip.startDate).inDays + 1,
                       (index) {
@@ -248,7 +283,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                           isSelected: _selectedDayIndex == index,
                           onTap: () {
                             setState(() => _selectedDayIndex = index);
-                            _fitBounds(); // ズーム再調整
+                            _fitBounds();
                           },
                         );
                       },
@@ -258,15 +293,57 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
               ),
             ),
           ),
+
+          // -------------------------------------------------------
+          // 4. マップ操作ボタン (現在地ボタン追加)
+          // -------------------------------------------------------
+          Positioned(
+            bottom: 30,
+            right: 20,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 👇 現在地へ移動ボタン
+                FloatingActionButton(
+                  heroTag: 'gps_btn',
+                  backgroundColor: _alignPositionOnUpdate == AlignOnUpdate.always 
+                      ? AppColors.primary 
+                      : Colors.white,
+                  onPressed: () {
+                    setState(() {
+                      // 追従モードON
+                      _alignPositionOnUpdate = AlignOnUpdate.always;
+                    });
+                  },
+                  child: Icon(
+                    Icons.my_location,
+                    color: _alignPositionOnUpdate == AlignOnUpdate.always 
+                        ? Colors.white 
+                        : Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                
+                // 全体表示ボタン
+                FloatingActionButton(
+                  heroTag: 'fit_bounds_btn',
+                  backgroundColor: Colors.white,
+                  onPressed: () {
+                    _fitBounds();
+                  },
+                  child: const Icon(Icons.crop_free, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // --- Helper Widgets ---
+  // --- Helper Widgets (変更なし) ---
   
   Widget _buildPin(int number, Color color) {
-    // ... (変更なし)
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -300,7 +377,6 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    // ... (変更なし)
     return GestureDetector(
       onTap: onTap,
       child: Container(

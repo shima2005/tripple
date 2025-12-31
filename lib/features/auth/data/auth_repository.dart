@@ -20,55 +20,43 @@ class AuthRepository {
   Future<User?> signInWithGoogle() async {
     try {
       if (kIsWeb) {
-        // 🌐 Web: Firebase Auth標準のポップアップ認証を使う (一番安定)
+        // Webは既存のポップアップ方式でOK
         GoogleAuthProvider authProvider = GoogleAuthProvider();
-        
-        // ポップアップでログイン画面を出す
-        final UserCredential userCredential = 
-            await _firebaseAuth.signInWithPopup(authProvider);
-            
+        final UserCredential userCredential = await _firebaseAuth.signInWithPopup(authProvider);
         return userCredential.user;
-        
       } else {
-        // 📱 Mobile: google_sign_in パッケージ (v7対応) を使う
-        
-        // 1. シングルトンインスタンスを取得 (コンストラクタは廃止されました)
+        // 📱 Mobile (v7対応)
         final googleSignIn = GoogleSignIn.instance;
-        
-        // 2. 認証フローを開始 (signInメソッドは廃止されました)
-        // authenticate() はキャンセルされると例外を投げる仕様に変わりました
-        final GoogleSignInAccount? googleUser;
-        try {
-          googleUser = await googleSignIn.authenticate();
-        } catch (e) {
-          // キャンセルされた場合など
-          print('Google Sign-In canceled or failed: $e');
-          return null; 
-        }
 
-        // 3. 認証トークンを取得
+        // 👇 修正ポイント1: initialize を呼ぶ
+        // serverClientId は Firebase コンソールの「プロジェクトの設定」>「SDK の設定と構成」にある
+        // 「Web クライアント ID」の文字列をセットしてね！これが無いと Android で idToken が空になることがある。
+        await googleSignIn.initialize(
+          // clientId: 'あなたのAndroidクライアントID.apps.googleusercontent.com', // 必要に応じて
+          serverClientId: '1036053921134-bqb8g40mh65jmplhd8rniv7ggu71166r.apps.googleusercontent.com', 
+        );
+
+        // 👇 修正ポイント2: authenticate() で認証開始
+        final GoogleSignInAccount? googleUser = await googleSignIn.authenticate();
+
+        if (googleUser == null) return null; // キャンセル時
+
         final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
 
-        // 4. Firebase用のクレデンシャルを作成
-        // v7以降、googleAuth.accessToken は削除されたため null を渡します。
-        // idToken があればFirebase認証は成功します。
+        // 👇 最新仕様：accessToken は null を渡し、idToken のみを使用する
         final OAuthCredential credential = GoogleAuthProvider.credential(
           accessToken: null, 
           idToken: googleAuth.idToken,
         );
 
-        // 5. Firebaseにサインイン
-        final UserCredential userCredential = 
-            await _firebaseAuth.signInWithCredential(credential);
-
+        final UserCredential userCredential = await _firebaseAuth.signInWithCredential(credential);
         return userCredential.user;
       }
     } catch (e) {
-      print('Google Sign-In Error: $e');
+      print('Google Sign-In Error: $e'); // ここで例外が catch されているか確認
       throw Exception('ログインに失敗しました: $e');
     }
   }
-
   Future<User?> signInAnonymously() async {
     try {
       final UserCredential userCredential = 

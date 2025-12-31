@@ -12,6 +12,7 @@ import 'package:new_tripple/features/settings/domain/settings_state.dart';
 import 'package:new_tripple/core/theme/app_colors.dart';
 import 'package:new_tripple/core/utils/country_converter.dart'; // 既存のコンバータ活用
 import 'package:new_tripple/features/auth/data/auth_repository.dart';
+import 'package:new_tripple/services/notification_service.dart';
 
 class SettingsCubit extends Cubit<SettingsState> {
   final UserRepository _userRepository;
@@ -94,20 +95,24 @@ class SettingsCubit extends Cubit<SettingsState> {
   List<Map<String, String>> _countryList = [];
   List<Map<String, String>> get countryList => _countryList;
 
-  // 初期化
+  // 🔄 初期化: 設定の読み込み
   Future<void> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     final user = FirebaseAuth.instance.currentUser;
 
-    // 1. 保存された設定を読み込む
     final colorValue = prefs.getInt('themeColor');
     final countryCode = prefs.getString('homeCountry');
     final town = prefs.getString('homeTown');
     final modeIndex = prefs.getInt('themeMode') ?? 1;
     final langIndex = prefs.getInt('language') ?? 0;
     final currIndex = prefs.getInt('currency') ?? 0;
+
+    // 👇 通知設定の読み込み
+    final notify = prefs.getBool('isNotificationEnabled') ?? false;
+    final ongoing = prefs.getBool('isOngoingNotificationEnabled') ?? true;
+    final reminder = prefs.getBool('isReminderEnabled') ?? true;
+    final minutes = prefs.getInt('reminderMinutesBefore') ?? 15;
     
-    // 2. 国リストを生成 (GeoJSONから)
     await _loadCountriesFromAsset();
 
     emit(state.copyWith(
@@ -118,9 +123,13 @@ class SettingsCubit extends Cubit<SettingsState> {
       themeMode: ThemeMode.values[modeIndex],
       language: AppLanguage.values[langIndex],
       currency: AppCurrency.values[currIndex],
+      // 👇 反映
+      isNotificationEnabled: notify,
+      isOngoingNotificationEnabled: ongoing,
+      isReminderEnabled: reminder,
+      reminderMinutesBefore: minutes,
     ));
   }
-
   //プロフィール更新
   Future<void> updateUserProfile(UserProfile newProfile) async {
     try {
@@ -243,6 +252,36 @@ class SettingsCubit extends Cubit<SettingsState> {
     // 0: system, 1: light, 2: dark とマッピングして保存すると良い
     await prefs.setInt('themeMode', mode.index); 
     emit(state.copyWith(themeMode: mode));
+  }
+
+  // 👇 通知設定の更新メソッド群
+  Future<void> toggleNotification(bool isEnabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isNotificationEnabled', isEnabled);
+    
+    if (isEnabled) {
+      // ONにしたタイミングで権限リクエスト
+      await NotificationService().requestPermissions();
+    }
+    emit(state.copyWith(isNotificationEnabled: isEnabled));
+  }
+
+  Future<void> toggleOngoingNotification(bool isEnabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isOngoingNotificationEnabled', isEnabled);
+    emit(state.copyWith(isOngoingNotificationEnabled: isEnabled));
+  }
+
+  Future<void> toggleReminder(bool isEnabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isReminderEnabled', isEnabled);
+    emit(state.copyWith(isReminderEnabled: isEnabled));
+  }
+
+  Future<void> updateReminderTime(int minutes) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('reminderMinutesBefore', minutes);
+    emit(state.copyWith(reminderMinutesBefore: minutes));
   }
 
   @override

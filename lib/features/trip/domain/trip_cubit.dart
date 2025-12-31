@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:new_tripple/models/expense_item.dart';
 import 'package:new_tripple/models/step_detail.dart';
@@ -13,9 +14,14 @@ import 'package:latlong2/latlong.dart';
 import 'package:new_tripple/services/gemini_service.dart'; 
 import 'package:uuid/uuid.dart';
 import 'package:new_tripple/core/constants/checklist_data.dart'; 
+import 'package:new_tripple/features/settings/domain/settings_state.dart';
+import 'package:new_tripple/services/notification_service.dart';
 
 class TripCubit extends Cubit<TripState> {
   final TripRepository _tripRepository;
+  
+  Timer? _ongoingTimer;//常時通知用タイマー
+
   final _geminiService = GeminiService();
   final _routingService = RoutingService();
 
@@ -598,6 +604,159 @@ class TripCubit extends Cubit<TripState> {
     } catch (e) {
       emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
     }
+  }
+
+  // ==============================================================================
+  // 🔔 通知ロジック (ここから追加！)
+  // ==============================================================================
+
+  /// 設定とスケジュールを元に通知を同期する
+  void syncNotifications(SettingsState settings) {
+    // 1. マスター権限がない、またはトリップ未選択なら全キャンセルして終了
+    if (!settings.isNotificationEnabled || state.selectedTrip == null) {
+      _stopOngoingTimer();
+      NotificationService().cancelOngoingNotification();
+      // 本当は cancelAllReminders() もしたいが、今回は上書き予約で対応
+      return;
+    }
+
+    final items = state.scheduleItems.whereType<ScheduledItem>().toList();
+
+    // 2. リマインダー予約
+    if (settings.isReminderEnabled) {
+      _scheduleReminders(items, settings.reminderMinutesBefore);
+    }
+
+    // 3. 常時通知 (トラベルモード)
+    if (settings.isOngoingNotificationEnabled) {
+      // タイマーが動いてなければ開始
+      if (_ongoingTimer == null || !_ongoingTimer!.isActive) {
+        // 即時実行
+        _updateOngoingNotification();
+        // 以降、1分ごとに更新 (現在地や状況が変わるため)
+        _ongoingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+          _updateOngoingNotification();
+        });
+      }
+    } else {
+      _stopOngoingTimer();
+      NotificationService().cancelOngoingNotification();
+    }
+  }
+
+  /// 全てのスケジュールに対してリマインダーをセット
+  Future<void> _scheduleReminders(List<ScheduledItem> items, int minutesBefore) async {
+    for (var item in items) {
+      // ID生成 (UUIDのハッシュコードを使う簡易実装)
+      final notificationId = item.id.hashCode;
+      
+      // 通知時刻の計算
+      final scheduledTime = item.time.subtract(Duration(minutes: minutesBefore));
+
+      // 過去の時間は無視 (NotificationService側でも弾いているが念のため)
+      if (scheduledTime.isAfter(DateTime.now())) {
+        await NotificationService().scheduleNotification(
+          id: notificationId,
+          title: 'Soon: ${item.name}',
+          body: 'Plan starts in $minutesBefore min at ${item.time.hour}:${item.time.minute.toString().padLeft(2,'0')}',
+          scheduledDate: scheduledTime,
+        );
+      }
+    }
+  }
+
+  /// 現在時刻に基づいて常時通知の内容を更新
+  Future<void> _updateOngoingNotification() async {
+    final trip = state.selectedTrip;
+    final items = state.scheduleItems.whereType<ScheduledItem>().toList();
+    if (trip == null || items.isEmpty) return;
+
+    final now = DateTime.now();
+
+    // 旅行期間外なら表示しない (または "Trip Finished" と出す)
+    if (now.isBefore(trip.startDate) || now.isAfter(trip.endDate.add(const Duration(days: 1)))) {
+       // 旅行前/後の処理... 今回はスキップ
+       return;
+    }
+
+    // A. 現在進行中の予定を探す (開始時間 ~ +1時間以内 と仮定)
+    ScheduledItem? currentItem;
+    ScheduledItem? nextItem;
+
+    // ソート (念のため)
+    items.sort((a, b) => a.time.compareTo(b.time));
+
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      final diff = now.difference(item.time).inMinutes;
+
+      // 開始済みで、開始から60分以内なら「今ここにいる」とみなす簡易ロジック
+      // (本来は item.duration を持つべきだが、今回は簡易実装)
+      if (diff >= 0 && diff < 60) {
+        currentItem = item;
+        // 次の予定
+        if (i + 1 < items.length) nextItem = items[i + 1];
+        break;
+      }
+      
+      // まだ始まっていない最初の予定 = 次の予定
+      if (diff < 0) {
+        nextItem = item;
+        break;
+      }
+    }
+
+    // 文言の生成
+    String currentStatus = 'Travel Mode Active';
+    String nextPlanStr = 'No upcoming plans';
+    String plainStatus = 'Travel Mode Active';
+    String plainPlan = 'No upcoming plans';
+
+    // パターン1: 何か実行中
+    if (currentItem != null) {
+      // Android用 (HTML)
+      currentStatus = 'Now at <b>${currentItem.name}</b>';
+      // iOS用
+      plainStatus = 'Now at ${currentItem.name}';
+
+      if (nextItem != null) {
+        final timeStr = "${nextItem.time.hour}:${nextItem.time.minute.toString().padLeft(2,'0')}";
+        nextPlanStr = 'Next: <font color="#FF9800"><b>${nextItem.name}</b></font> ($timeStr)';
+        plainPlan = 'Next: ${nextItem.name} ($timeStr)';
+      } else {
+        nextPlanStr = 'End of the day';
+        plainPlan = 'End of the day';
+      }
+    } 
+    // パターン2: 移動中 (今の予定はないが、次の予定がある)
+    else if (nextItem != null) {
+      final timeStr = "${nextItem.time.hour}:${nextItem.time.minute.toString().padLeft(2,'0')}";
+      
+      currentStatus = '<b>Moving</b> to next spot';
+      plainStatus = 'Moving to next spot';
+
+      nextPlanStr = 'Next: <font color="#2196F3"><b>${nextItem.name}</b></font> ($timeStr)';
+      plainPlan = 'Next: ${nextItem.name} ($timeStr)';
+    }
+
+    // 通知更新
+    await NotificationService().showOngoingNotification(
+      currentStatus: currentStatus,
+      nextPlan: nextPlanStr,
+      plainStatus: plainStatus,
+      plainPlan: plainPlan,
+    );
+  }
+
+  void _stopOngoingTimer() {
+    _ongoingTimer?.cancel();
+    _ongoingTimer = null;
+  }
+  
+  @override
+  Future<void> close() {
+    _stopOngoingTimer();
+    return super.close();
   }
 
   // ----------------------------------------------------------------

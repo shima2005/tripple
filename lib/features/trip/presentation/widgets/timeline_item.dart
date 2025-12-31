@@ -457,7 +457,7 @@ class _RouteRowState extends State<_RouteRow> {
                               boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)],
                             ),
                             child: Image.asset(
-                              'images/google_maps.png', 
+                              'assets/images/google_maps.png', 
                               width: 20, 
                               height: 20,
                               errorBuilder: (context, error, stackTrace) {
