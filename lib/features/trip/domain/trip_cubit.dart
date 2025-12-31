@@ -644,23 +644,25 @@ class TripCubit extends Cubit<TripState> {
     }
   }
 
-  /// 全てのスケジュールに対してリマインダーをセット
   Future<void> _scheduleReminders(List<ScheduledItem> items, int minutesBefore) async {
+    print('🔔 Scheduling reminders check...'); // 👈 デバッグ用
+    
     for (var item in items) {
-      // ID生成 (UUIDのハッシュコードを使う簡易実装)
       final notificationId = item.id.hashCode;
-      
-      // 通知時刻の計算
       final scheduledTime = item.time.subtract(Duration(minutes: minutesBefore));
 
-      // 過去の時間は無視 (NotificationService側でも弾いているが念のため)
+      print('   - Checking Item: ${item.name} at ${scheduledTime}'); // 👈 デバッグ用
+
       if (scheduledTime.isAfter(DateTime.now())) {
+        print('   ✅ Scheduled!'); // 👈 これが出れば予約までは成功している
         await NotificationService().scheduleNotification(
           id: notificationId,
           title: 'Soon: ${item.name}',
-          body: 'Plan starts in $minutesBefore min at ${item.time.hour}:${item.time.minute.toString().padLeft(2,'0')}',
+          body: 'Plan starts in $minutesBefore min',
           scheduledDate: scheduledTime,
         );
+      } else {
+        print('   ❌ Skipped (Past time)'); // 👈 これが出たら時間が原因
       }
     }
   }

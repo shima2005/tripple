@@ -15,6 +15,7 @@ import 'package:new_tripple/features/auth/presentation/screens/login_screen.dart
 import 'package:new_tripple/features/settings/domain/settings_cubit.dart';
 import 'package:new_tripple/features/settings/domain/settings_state.dart';
 import 'package:new_tripple/features/user/data/user_repository.dart';
+import 'package:new_tripple/services/notification_service.dart';
 
 
 
@@ -23,7 +24,7 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   //TODO Web開発中は永続化をOFFにするとキャッシュトラブルが減る
   FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: false);
-
+  await NotificationService().init();
   runApp(const MyApp());
 }
 
