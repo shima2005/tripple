@@ -13,7 +13,7 @@ class SmartTicket extends StatelessWidget {
   final VoidCallback? onTap;
   final TicketMode mode;
   
-  // 👇 追加: 親から受け取る出発地と目的地
+  // 親から受け取る出発地と目的地
   final String? fromLocation;
   final String? fromCountryCode;
   final String? toLocation;
@@ -24,9 +24,9 @@ class SmartTicket extends StatelessWidget {
     required this.trip,
     this.onTap,
     this.mode = TicketMode.summary,
-    this.fromLocation, // 👈 追加
+    this.fromLocation,
     this.fromCountryCode,
-    this.toLocation,   // 👈 追加
+    this.toLocation,
     this.toCountryCode,
   });
 
@@ -37,15 +37,17 @@ class SmartTicket extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 20),
+        // 横幅のマージン。ここを広げるとチケット自体の横幅が狭くなりますが、
+        // 一般的には縦長感を消すならマージンはいじらず(あるいは狭め)、中身の高さを減らすのが正解です。
+        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
+              color: AppColors.primary.withValues(alpha: 0.15), // 影を少し調整
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
@@ -53,39 +55,39 @@ class SmartTicket extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           child: Stack(
             children: [
-              // 0. 背景の透かしアイコン
+              // 0. 背景の透かしアイコン (サイズと位置を調整して圧迫感を減らす)
               Positioned(
-                right: -20,
-                bottom: -20,
+                right: -15,
+                bottom: -15,
                 child: Icon(
                   _getModeIcon(),
-                  size: 140,
-                  color: themeColor.withValues(alpha: 0.05),
+                  size: 110, // 140 -> 110
+                  color: themeColor.withValues(alpha: 0.04),
                 ),
               ),
 
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 1. カラーストリップ
+                  // 1. カラーストリップ (スリム化)
                   Container(
-                    height: 16, 
+                    height: 10, // 16 -> 10
                     width: double.infinity,
                     color: themeColor,
                   ),
 
-                  // 2. メインコンテンツ
+                  // 2. メインコンテンツ (パディングを詰める)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 10), // 上下を少し削減
                     child: _buildMainContent(themeColor),
                   ),
 
                   // 3. ミシン目
                   _buildDivider(),
 
-                  // 4. サブコンテンツ
+                  // 4. サブコンテンツ (パディングを詰める)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 14), // 上下を削減
                     child: _buildSubContent(themeColor),
                   ),
                 ],
@@ -127,16 +129,14 @@ class SmartTicket extends StatelessWidget {
   }
 
   Widget _buildSummaryMain(Color color) {
-    // データがない場合のデフォルト値
     final from = fromLocation ?? 'Home'; 
     final to = toLocation ?? trip.title;
 
+    // ロジックはそのまま維持
     String toCode(String name, {String? countryCode}) {
       if (name.isEmpty) return '???';
-      
       final lowerName = name.toLowerCase();
 
-      // 1. 都市コード辞書
       if (cityCodes.containsKey(lowerName)) {
         return cityCodes[lowerName]!;
       }
@@ -146,62 +146,59 @@ class SmartTicket extends StatelessWidget {
         }
       }
 
-      // 2. 国コードフォールバック (Alpha-2 -> Alpha-3 変換！)
       if (countryCode != null && countryCode.isNotEmpty) {
         final alpha3 = CountryConverter.toAlpha3(countryCode);
-        // 変換できれば3文字、できなければ元の2文字を表示
         return (alpha3 ?? countryCode).toUpperCase(); 
       }
 
-      // 3. 先頭3文字
       final sanitized = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), ''); 
       if (sanitized.length >= 3) {
         return sanitized.substring(0, 3).toUpperCase();
       }
-      
       return 'DST'; 
     }
 
     final fromCodeStr = toCode(from, countryCode: fromCountryCode);
-    // 👇 目的地の場合は countryCode も渡してあげる
     final toCodeStr = toCode(to, countryCode: toCountryCode);
     
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        _buildCode(fromCodeStr, from), // 左: 出発地
+        Expanded(child: _buildCode(fromCodeStr, from, CrossAxisAlignment.start)), // 左
         
-        // 中央: アイコン
-        Column(
-          children: [
-            Icon(Icons.flight_takeoff_rounded, color: color, size: 28),
-            // ここに「旅行日数」などを入れてもいいかも
-            Text(
-              '${trip.endDate.difference(trip.startDate).inDays + 1} Days', 
-              style: AppTextStyles.label.copyWith(fontSize: 10, color: AppColors.textSecondary)
-            ),
-          ],
+        // 中央: アイコンと日数
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Column(
+            children: [
+              Icon(Icons.flight_takeoff_rounded, color: color, size: 24), // 28 -> 24
+              const SizedBox(height: 2),
+              Text(
+                '${trip.endDate.difference(trip.startDate).inDays + 1} Days', 
+                style: AppTextStyles.label.copyWith(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)
+              ),
+            ],
+          ),
         ),
         
-        _buildCode(toCodeStr, to), // 右: 目的地
+        Expanded(child: _buildCode(toCodeStr, to, CrossAxisAlignment.end)), // 右
       ],
     );
   }
 
-  // ... ( _buildStayMain, _buildMoveMain は変更なし ) ...
   Widget _buildStayMain(Color color) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(8), // 10 -> 8
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
-          child: Icon(Icons.hotel_rounded, color: color, size: 24),
+          child: Icon(Icons.hotel_rounded, color: color, size: 22), // 24 -> 22
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,13 +206,13 @@ class SmartTicket extends StatelessWidget {
               Text(
                 'CHECKING IN',
                 style: AppTextStyles.label.copyWith(
-                  color: color, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 1.2
+                  color: color, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 1.0
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               Text(
-                'Kiyomizu-dera', // ※ここも本来はScheduledItemから取るべきですが今回はSummaryの改修なので据え置き
-                style: AppTextStyles.h3.copyWith(fontSize: 18),
+                'Destination Hotel', // データ連携時はここを修正
+                style: AppTextStyles.h3.copyWith(fontSize: 16), // 18 -> 16
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -230,14 +227,14 @@ class SmartTicket extends StatelessWidget {
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(8), // 10 -> 8
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
-          child: Icon(Icons.directions_train_rounded, color: color, size: 24),
+          child: Icon(Icons.directions_train_rounded, color: color, size: 22), // 24 -> 22
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,18 +242,18 @@ class SmartTicket extends StatelessWidget {
               Text(
                 'MOVING',
                 style: AppTextStyles.label.copyWith(
-                  color: color, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 1.2
+                  color: color, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 1.0
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 1),
               Row(
                 children: [
-                  Text('Kyoto', style: AppTextStyles.h3.copyWith(fontSize: 16)),
+                  Flexible(child: Text('Kyoto', style: AppTextStyles.h3.copyWith(fontSize: 15), overflow: TextOverflow.ellipsis)),
                   const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Icon(Icons.arrow_forward_rounded, size: 14, color: Colors.grey),
+                    padding: EdgeInsets.symmetric(horizontal: 6),
+                    child: Icon(Icons.arrow_forward_rounded, size: 12, color: Colors.grey),
                   ),
-                  Text('Gion', style: AppTextStyles.h3.copyWith(fontSize: 16)),
+                  Flexible(child: Text('Gion', style: AppTextStyles.h3.copyWith(fontSize: 15), overflow: TextOverflow.ellipsis)),
                 ],
               ),
             ],
@@ -266,7 +263,7 @@ class SmartTicket extends StatelessWidget {
     );
   }
 
-  // ... ( _buildSubContent, _buildSummarySub, _buildProgress, _buildDivider, _buildNotch, _buildBarcode は変更なし ) ...
+  // --- サブコンテンツ ---
   Widget _buildSubContent(Color color) {
     switch (mode) {
       case TicketMode.stay:
@@ -279,16 +276,17 @@ class SmartTicket extends StatelessWidget {
   }
 
   Widget _buildSummarySub() {
+    // 縦長解消のため、ラベルと値の隙間などを詰める
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         _buildLabelValue('DATE', DateFormat('MM/dd').format(trip.startDate)),
-        _buildLabelValue('GATE', 'E4'), // ダミー
-        _buildLabelValue('SEAT', '12A'), // ダミー
+        _buildLabelValue('GATE', 'E4'),
+        _buildLabelValue('SEAT', '12A'),
         
         Padding(
-          padding: const EdgeInsets.only(bottom: 2),
+          padding: const EdgeInsets.only(bottom: 1), // 2 -> 1
           child: _buildBarcode(),
         ),
       ],
@@ -302,7 +300,7 @@ class SmartTicket extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('10:00', style: AppTextStyles.label.copyWith(fontSize: 12)),
+            Text('10:00', style: AppTextStyles.label.copyWith(fontSize: 11)),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
@@ -311,13 +309,13 @@ class SmartTicket extends StatelessWidget {
               ),
               child: Text(
                 mode == TicketMode.stay ? 'On Stay' : 'On Time',
-                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
               ),
             ),
-            Text('12:00', style: AppTextStyles.label.copyWith(fontSize: 12)),
+            Text('12:00', style: AppTextStyles.label.copyWith(fontSize: 11)),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6), // 8 -> 6
         ClipRRect(
           borderRadius: BorderRadius.circular(4),
           child: LinearProgressIndicator(
@@ -331,14 +329,26 @@ class SmartTicket extends StatelessWidget {
     );
   }
 
-  Widget _buildCode(String code, String city) {
+  // 配置(Alignment)を指定できるように変更
+  Widget _buildCode(String code, String city, CrossAxisAlignment align) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: align,
       children: [
-        Text(code, style: AppTextStyles.ticketCode.copyWith(fontSize: 28)),
         Text(
-          city.length > 10 ? '${city.substring(0, 10)}...' : city, // 長すぎる場合は省略
-          style: AppTextStyles.label.copyWith(fontSize: 10)
+          code, 
+          style: AppTextStyles.ticketCode.copyWith(
+            fontSize: 24, // 28 -> 24: 少し小さくして圧迫感を減らす
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.0,
+            height: 1.0,
+          )
+        ),
+        const SizedBox(height: 2),
+        Text(
+          city.length > 12 ? '${city.substring(0, 12)}...' : city,
+          style: AppTextStyles.label.copyWith(fontSize: 10, color: Colors.grey[700]),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ), 
       ],
     );
@@ -348,16 +358,16 @@ class SmartTicket extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: AppTextStyles.label.copyWith(fontSize: 9, color: Colors.grey)),
-        Text(value, style: AppTextStyles.h3.copyWith(fontSize: 14)),
+        Text(label, style: AppTextStyles.label.copyWith(fontSize: 8, color: Colors.grey, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 1),
+        Text(value, style: AppTextStyles.h3.copyWith(fontSize: 13)), // 14 -> 13
       ],
     );
   }
   
-  // ... _buildDivider, _buildNotch, _buildBarcode
   Widget _buildDivider() {
     return SizedBox(
-      height: 16,
+      height: 14, // 16 -> 14
       child: Stack(
         children: [
           Center(
@@ -377,8 +387,8 @@ class SmartTicket extends StatelessWidget {
               },
             ),
           ),
-          Positioned(left: -8, top: 0, bottom: 0, child: _buildNotch()),
-          Positioned(right: -8, top: 0, bottom: 0, child: _buildNotch()),
+          Positioned(left: -7, top: 0, bottom: 0, child: _buildNotch()), // 調整
+          Positioned(right: -7, top: 0, bottom: 0, child: _buildNotch()),
         ],
       ),
     );
@@ -386,9 +396,9 @@ class SmartTicket extends StatelessWidget {
 
   Widget _buildNotch() {
     return Container(
-      width: 16,
+      width: 14, // 16 -> 14
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: AppColors.background, // 背景色と同じにする必要があります
         shape: BoxShape.circle,
       ),
     );
@@ -397,12 +407,13 @@ class SmartTicket extends StatelessWidget {
   Widget _buildBarcode() {
     return Row(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: List.generate(12, (index) {
         final width = (index % 4 == 0) ? 3.0 : (index % 3 == 0 ? 1.0 : 2.0);
         return Container(
           margin: const EdgeInsets.only(right: 2),
           width: width,
-          height: 28,
+          height: 24, // 28 -> 24
           color: AppColors.textPrimary.withValues(alpha: 0.2),
         );
       }),
