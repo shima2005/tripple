@@ -16,11 +16,13 @@ import 'package:new_tripple/features/settings/domain/settings_cubit.dart';
 import 'package:new_tripple/features/settings/domain/settings_state.dart';
 import 'package:new_tripple/features/user/data/user_repository.dart';
 import 'package:new_tripple/services/notification_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   //TODO Web開発中は永続化をOFFにするとキャッシュトラブルが減る
   FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: false);

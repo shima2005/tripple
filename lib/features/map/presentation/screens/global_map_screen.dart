@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_cancellable_tile_provider/flutter_map_cancellable_tile_provider.dart';
 import 'package:latlong2/latlong.dart' hide Path;
@@ -222,8 +223,8 @@ class _GlobalMapScreenState extends State<GlobalMapScreen> {
                 children: [
                   TileLayer(
                     urlTemplate: 'https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/256/{z}/{x}/{y}@2x?access_token={accessToken}',
-                    additionalOptions: const {
-                      'accessToken': 'pk.eyJ1Ijoic2hpbWEyMDA1IiwiYSI6ImNtaW96bzBqaDAwZHYzZnB3anY1b2p5cGMifQ.7u4lEuhFpc_GhqaiBrUmTQ', 
+                    additionalOptions: {
+                      'accessToken': dotenv.env['MAPBOX_ACCESS_TOKEN'] ?? '', 
                     },
                     userAgentPackageName: 'com.example.new_tripple',
                     tileProvider: CancellableNetworkTileProvider(),

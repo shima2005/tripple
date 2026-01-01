@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:intl/intl.dart';
 import 'package:new_tripple/models/schedule_item.dart';
@@ -14,7 +15,7 @@ class AccommodationRequest {
 
 class GeminiService {
   // ⚠️ APIキーは安全に管理！
-  static const String _apiKey = 'AIzaSyDolCnVMwJEDFTPFcvaUQmd_V9m1rhV4hY';
+  final String _apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
 
   late final GenerativeModel _model;
 

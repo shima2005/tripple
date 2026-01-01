@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:new_tripple/models/enums.dart';
@@ -22,7 +23,7 @@ class RouteResult {
 }
 
 class RoutingService {
-  static const String _accessToken = 'pk.eyJ1Ijoic2hpbWEyMDA1IiwiYSI6ImNtaW96bzBqaDAwZHYzZnB3anY1b2p5cGMifQ.7u4lEuhFpc_GhqaiBrUmTQ';
+  final String _accessToken = dotenv.env['MAPBOX_ACCESS_TOKEN'] ?? '';
   static const String _baseUrl = 'https://api.mapbox.com/directions/v5/mapbox';
 
   final Map<String, RouteResult> _cache = {};

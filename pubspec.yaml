@@ -70,6 +70,7 @@ dependencies:
   flutter_local_notifications: ^17.0.0
   timezone: ^0.9.4
   flutter_timezone: ^5.0.1
+  flutter_dotenv: ^6.0.0
 
 
 dev_dependencies:
@@ -98,6 +99,7 @@ flutter:
   assets:
     - assets/geo/
     - assets/images/
+    - .env
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
