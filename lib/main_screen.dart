@@ -319,7 +319,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
           if (showNotification)
             Positioned(
               top: MediaQuery.of(context).padding.top + 20,
-              right: 20,
+              right: 24,
               child: _buildNotificationButton(),
             ),
         ],

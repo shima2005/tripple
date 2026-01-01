@@ -89,4 +89,21 @@ extension TransportTypeExtension on TransportType {
       case TransportType.other: return Icons.commute_rounded;
     }
   }
+
+  String get stringIcon {
+    switch(this){
+      case TransportType.walk: return "🚶";
+      case TransportType.train: return "🚃";
+      case TransportType.bus: return "🚌";
+      case TransportType.subway: return "🚃";
+      case TransportType.shinkansen: return "🚃";
+      case TransportType.car: return "🚙";
+      case TransportType.taxi: return "🚕";
+      case TransportType.plane: return "✈";
+      case TransportType.ferry: return "🚢";
+      case TransportType.bicycle: return "🚴";
+      case TransportType.transit: return "🚃";
+      case TransportType.other: return "🚃";
+    }
+  }
 }

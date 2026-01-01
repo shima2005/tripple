@@ -5,6 +5,7 @@ import 'package:new_tripple/core/theme/app_text_styles.dart';
 import 'package:new_tripple/features/discover/domain/discover_cubit.dart';
 import 'package:new_tripple/features/discover/domain/discover_state.dart';
 import 'package:new_tripple/features/discover/presentation/widgets/post_card.dart';
+import 'package:new_tripple/shared/widgets/custom_header.dart';
 
 class DiscoverScreen extends StatefulWidget {
   const DiscoverScreen({super.key});
@@ -32,13 +33,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           children: [
             // 🔍 ヘッダー & 検索バー
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
               color: Colors.white,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Discover', style: AppTextStyles.h1),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 24,),
+                  CustomHeader(title: "Discover"),
                   TextField(
                     controller: _searchController,
                     decoration: InputDecoration(

@@ -15,6 +15,7 @@ import 'package:new_tripple/models/trip.dart';
 import 'package:new_tripple/core/utils/country_converter.dart';
 // 👇 追加: 設定（ホームカントリー）を取得するため
 import 'package:new_tripple/features/settings/domain/settings_cubit.dart';
+import 'package:new_tripple/shared/widgets/custom_header.dart';
 
 class GlobalMapScreen extends StatefulWidget {
   final Function(Trip) onTripSelected;
@@ -207,7 +208,10 @@ class _GlobalMapScreenState extends State<GlobalMapScreen> {
                   initialCenter: const LatLng(20.0, 0.0),
                   initialZoom: 2.5,
                   minZoom: 2.0,
-                  maxZoom: 7.0,
+                  maxZoom: 4.0,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                  ),
                   cameraConstraint: CameraConstraint.contain(
                     bounds: LatLngBounds(
                       const LatLng(-85, -180),
@@ -237,11 +241,12 @@ class _GlobalMapScreenState extends State<GlobalMapScreen> {
                 top: 0, left: 0,
                 child: SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('World Map 🌍', style: AppTextStyles.h2.copyWith(fontSize: 28, shadows: [const Shadow(color: Colors.white, blurRadius: 10)])),
+                        const SizedBox(height: 24),
+                        CustomHeader(title: "Global Map"),
                         const SizedBox(height: 12),
                         
                         _buildGlassContainer(
@@ -304,10 +309,10 @@ class _GlobalMapScreenState extends State<GlobalMapScreen> {
 
               // 2. 右上: ピン切り替え
               Positioned(
-                top: 10, right: 0,
+                top: 12, right: 0,
                 child: SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(12.0),
                     child: _buildGlassContainer(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       child: Row(

@@ -6,6 +6,7 @@ import 'package:new_tripple/features/trip/domain/trip_cubit.dart';
 import 'package:new_tripple/features/trip/domain/trip_state.dart';
 import 'package:new_tripple/features/trip/presentation/widgets/trip_card.dart';
 import 'package:new_tripple/models/trip.dart';
+import 'package:new_tripple/shared/widgets/custom_header.dart';
 import 'package:new_tripple/shared/widgets/tripple_empty_state.dart';
 
 class TravelHomeScreen extends StatefulWidget {
@@ -34,19 +35,7 @@ class _TravelHomeScreenState extends State<TravelHomeScreen> {
               const SizedBox(height: 24),
               
               // 1. My Trips ヘッダー
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('My Trips', style: AppTextStyles.h1),
-                  IconButton(
-                    onPressed: () {
-                      // ソート機能など (将来実装)
-                    },
-                    icon: const Icon(Icons.sort_rounded, color: AppColors.textPrimary),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
+              CustomHeader(title: "My Trips"),
 
               // 2. リスト部分 (画面いっぱい使う)
               Expanded(

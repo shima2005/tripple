@@ -13,6 +13,7 @@ import 'package:new_tripple/features/settings/presentation/screens/friends_list_
 import 'package:new_tripple/features/settings/presentation/screens/legal_screen.dart';
 import 'package:new_tripple/features/settings/presentation/screens/profile_edit_modal.dart';
 import 'package:new_tripple/features/auth/data/auth_repository.dart';
+import 'package:new_tripple/shared/widgets/custom_header.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -27,19 +28,12 @@ class SettingsScreen extends StatelessWidget {
           backgroundColor: AppColors.background,
           body: SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: Text(
-                      'Settings',
-                      style: AppTextStyles.h1.copyWith(color: AppColors.textPrimary),
-                    ),
-                  ),
                   const SizedBox(height: 24),
+                  const CustomHeader(title: "Settings"),
 
                   // 1. Account
                   _SectionHeader(title: 'Account'),
@@ -123,7 +117,7 @@ class SettingsScreen extends StatelessWidget {
                   const SizedBox(height: 24),
 
                   // 3. My Base
-                  _SectionHeader(title: 'My Base 🏠'),
+                  _SectionHeader(title: 'My Base'),
                   _CountrySelector(
                     selectedCode: state.homeCountryCode,
                     onChanged: (code) => context.read<SettingsCubit>().updateHomeCountry(code),

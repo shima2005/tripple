@@ -88,6 +88,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   }
 
   void _fitBounds() {
+    // 1. 表示すべき座標リストを作成
     final visiblePoints = widget.scheduleItems
         .where((item) {
            final isDayMatch = _selectedDayIndex == null || item.dayIndex == _selectedDayIndex;
@@ -96,16 +97,38 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
         .map((item) => LatLng(item.latitude!, item.longitude!))
         .toList();
 
+    // データがなければ何もしない
     if (visiblePoints.isEmpty) return;
 
+    // 2. 範囲（Bounds）を作成
     final bounds = LatLngBounds.fromPoints(visiblePoints);
+
+    // 🔥 修正ポイント: 「点が1つ」または「全点がほぼ同じ場所（面積ゼロ）」かどうか判定
+    // 緯度差と経度差が極小なら、実質1点とみなす
+    final isZeroArea = (bounds.north - bounds.south).abs() < 0.000001 && 
+                       (bounds.east - bounds.west).abs() < 0.000001;
+
+    if (visiblePoints.length == 1 || isZeroArea) {
+      // 中心点に、固定ズーム(15.0)で移動して終了
+      _mapController.move(bounds.center, 15.0);
+      if (mounted) setState(() => _alignPositionOnUpdate = AlignOnUpdate.never);
+      return;
+    }
+
+    // 3. 点が散らばっている場合のみ fitCamera (try-catchでさらに防御)
+    try {
+      _mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: bounds,
+          padding: const EdgeInsets.all(50),
+        ),
+      );
+    } catch (e) {
+      // それでも計算エラーが出たら、中心点へ移動する安全策
+      print('Camera fit error: $e');
+      _mapController.move(bounds.center, 15.0);
+    }
     
-    _mapController.fitCamera(
-      CameraFit.bounds(
-        bounds: bounds,
-        padding: const EdgeInsets.all(50),
-      ),
-    );
     // ズームしたら追従モードは解除
     if (mounted) setState(() => _alignPositionOnUpdate = AlignOnUpdate.never);
   }
@@ -303,35 +326,44 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 👇 現在地へ移動ボタン
+                // 👇 丸くて動く現在地ボタン
                 FloatingActionButton(
                   heroTag: 'gps_btn',
+                  elevation: 4,
                   backgroundColor: _alignPositionOnUpdate == AlignOnUpdate.always 
                       ? AppColors.primary 
                       : Colors.white,
+                  shape: const CircleBorder(), // 完全な丸にする
                   onPressed: () {
                     setState(() {
-                      // 追従モードON
-                      _alignPositionOnUpdate = AlignOnUpdate.always;
+                      // 一度無効化してから有効化することで強制的に位置を拾い直す
+                      _alignPositionOnUpdate = AlignOnUpdate.never;
+                    });
+                    
+                    // 微小なディレイを入れて再開 (これがコツです)
+                    Future.delayed(const Duration(milliseconds: 100), () {
+                      if (mounted) {
+                        setState(() => _alignPositionOnUpdate = AlignOnUpdate.always);
+                      }
                     });
                   },
                   child: Icon(
-                    Icons.my_location,
+                    Icons.my_location_rounded,
                     color: _alignPositionOnUpdate == AlignOnUpdate.always 
                         ? Colors.white 
-                        : Colors.black54,
+                        : Colors.black87,
                   ),
                 ),
                 const SizedBox(height: 16),
                 
-                // 全体表示ボタン
+                // 全体表示ボタンも丸く
                 FloatingActionButton(
                   heroTag: 'fit_bounds_btn',
+                  elevation: 4,
                   backgroundColor: Colors.white,
-                  onPressed: () {
-                    _fitBounds();
-                  },
-                  child: const Icon(Icons.crop_free, color: Colors.black54),
+                  shape: const CircleBorder(), // 丸く
+                  onPressed: _fitBounds,
+                  child: const Icon(Icons.crop_free_rounded, color: Colors.black87),
                 ),
               ],
             ),

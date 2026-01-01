@@ -458,7 +458,7 @@ class TripCubit extends Cubit<TripState> {
     }
   }
 
-  // --- AI最適化: シミュレーション (変更なし) ---
+  // --- AI最適化: シミュレーション (修正) ---
   Future<List<ScheduledItem>> simulateAutoSchedule({
     required int dayIndex, required DateTime date,
     bool allowSuggestions = false, Set<String> lockedItemIds = const {},
@@ -479,7 +479,7 @@ class TripCubit extends Cubit<TripState> {
     for (int i = 0; i < fixedItems.length - 1; i++) {
       final current = fixedItems[i];
       final next = fixedItems[i + 1];
-      if (current.latitude == null || next.latitude == null) continue;
+      // ⚠️ 削除: if (current.latitude == null || next.latitude == null) continue;
 
       final existingRoute = _findExistingRoute(current, next);
       final currentEndTime = current.time.add(Duration(minutes: current.durationMinutes ?? 60));
@@ -496,7 +496,7 @@ class TripCubit extends Cubit<TripState> {
     return fixedItems;
   }
 
-  // --- AI最適化: 保存 (変更なし) ---
+  // --- AI最適化: 保存 (修正) ---
   Future<void> saveOptimizedSchedule({
     required String tripId, required int dayIndex, required List<ScheduledItem> optimizedItems,
   }) async {
@@ -510,7 +510,7 @@ class TripCubit extends Cubit<TripState> {
       for (int i = 0; i < itemsWithIds.length - 1; i++) {
         final current = itemsWithIds[i];
         final next = itemsWithIds[i + 1];
-        if (current.latitude == null || next.latitude == null) continue;
+        // ⚠️ 削除: if (current.latitude == null || next.latitude == null) continue;
 
         final currentEndTime = current.time.add(Duration(minutes: current.durationMinutes ?? 60));
         
@@ -679,10 +679,12 @@ class TripCubit extends Cubit<TripState> {
     }
   }
 
-  // 👇 修正: 移動中の詳細ステップまで判定して表示する超強化版
+
+  // 👇 移動中は「今のステップ」、滞在中は「次の予定」を出す賢い通知ロジック
   Future<void> _updateOngoingNotification() async {
     final trip = state.selectedTrip;
-    // ScheduledItem と RouteItem を両方取得してマージ
+    
+    // ScheduledItem と RouteItem をマージ
     final allItems = <dynamic>[];
     for (var item in state.scheduleItems) {
       if (item is ScheduledItem || item is RouteItem) {
@@ -696,22 +698,22 @@ class TripCubit extends Cubit<TripState> {
     // 旅行期間外ならスキップ
     if (now.isBefore(trip.startDate) || now.isAfter(trip.endDate.add(const Duration(days: 1)))) return;
 
-    // 時間順にソート (ScheduledItemもRouteItemも time プロパティを持つ前提)
+    // 時間順にソート
     allItems.sort((a, b) {
       final timeA = (a is ScheduledItem) ? a.time : (a as RouteItem).time;
       final timeB = (b is ScheduledItem) ? b.time : (b as RouteItem).time;
       return timeA.compareTo(timeB);
     });
 
-    String currentStatus = 'Travel Mode Active';
-    String nextPlanStr = 'No upcoming plans';
-    String plainStatus = 'Travel Mode Active';
-    String plainPlan = 'No upcoming plans';
+    String title = 'Travel Mode Active';
+    String body = 'No upcoming plans';
+    String plainTitle = 'Travel Mode Active';
+    String plainBody = 'No upcoming plans';
 
     dynamic currentItem;
     dynamic nextItem;
 
-    // 現在地判定ロジック
+    // ■ 1. 現在地と次の予定を特定
     for (var i = 0; i < allItems.length; i++) {
       final item = allItems[i];
       DateTime startTime;
@@ -729,88 +731,149 @@ class TripCubit extends Cubit<TripState> {
 
       final endTime = startTime.add(Duration(minutes: duration));
 
-      // 今が「開始〜終了」の間なら、それが Current
+      // 今が期間内なら Current
       if (now.isAfter(startTime) && now.isBefore(endTime)) {
         currentItem = item;
         if (i + 1 < allItems.length) nextItem = allItems[i + 1];
         break;
       }
       
-      // まだ始まっていない直近の予定なら、それが Next
+      // まだ始まっていない直近の予定なら Next
       if (now.isBefore(startTime)) {
         nextItem = item;
         break;
       }
     }
 
-    // ■ Currentの表示作成
-    if (currentItem != null) {
-      if (currentItem is ScheduledItem) {
-        // 滞在中
-        currentStatus = 'Now at <b>${currentItem.name}</b>';
-        plainStatus = 'Now at ${currentItem.name}';
-      } else if (currentItem is RouteItem) {
-        // 🚗 移動中: StepDetail を解析して「今どのステップか」を推定する
-        final route = currentItem;
-        String transportDetail = route.transportType.name; // デフォルト
-        
-        // StepDetailがあれば、経過時間から現在のステップを特定
-        if (route.detailedSteps.isNotEmpty) {
-          final timeSinceStart = now.difference(route.time).inMinutes;
-          int accumMinutes = 0;
-          for (var step in route.detailedSteps) {
-            accumMinutes += (step.durationMinutes as int);
-            if (timeSinceStart < accumMinutes) {
-              // 今このステップにいる！
-              transportDetail = step.transportType.name; // "walk", "train" etc
-              // 残り時間
-              // final remain = accumMinutes - timeSinceStart;
-              break;
-            }
-          }
-        }
-        
-        // アイコンなどを装飾
-        String icon = '🚗';
-        if (transportDetail.contains('walk')) icon = '🚶';
-        if (transportDetail.contains('train') || transportDetail.contains('subway')) icon = '🚃';
-        if (transportDetail.contains('bus')) icon = '🚌';
+    // ■ 2. 表示内容の生成 (ユーザー要望に合わせて分岐)
 
-        currentStatus = 'Moving: <b>$icon ${transportDetail.toUpperCase()}</b>';
-        plainStatus = 'Moving: $icon ${transportDetail.toUpperCase()}';
-      }
-    } else {
-      // 予定と予定の隙間時間など
-      currentStatus = 'Free Time / Waiting';
-      plainStatus = 'Free Time / Waiting';
-    }
-
-    // ■ Nextの表示作成
-    if (nextItem != null) {
-      DateTime nextTime;
-      String nextName = '';
+    // A. 移動中 (RouteItem) の場合
+    if (currentItem is RouteItem) {
+      final route = currentItem;
       
-      if (nextItem is ScheduledItem) {
-        nextTime = nextItem.time;
-        nextName = nextItem.name;
+      // --- メイン (Title): Move to [目的地] ---
+      String destinationName = 'Next Spot';
+      try {
+        final destItem = state.scheduleItems
+            .whereType<ScheduledItem>()
+            .firstWhere((item) => item.id == route.destinationItemId);
+        destinationName = destItem.name;
+      } catch (_) {}
+
+      // アイコン決定
+      String mainIcon = route.transportType.stringIcon;
+
+      title = 'Move to <b>$destinationName</b> ($mainIcon)';
+      plainTitle = 'Move to $destinationName ($mainIcon)';
+
+      // --- 下のところ (Body): Step Detail (開始 - 終了) ---
+      String stepInfo = 'Moving...';
+      
+      if (route.detailedSteps.isNotEmpty) {
+        // 今どのステップにいるか計算
+        final timeSinceStart = now.difference(route.time).inMinutes;
+        int accumMinutes = 0;
+        StepDetail? currentStep;
+        int stepStartMin = 0; // そのステップがルート開始から何分後に始まるか
+
+        for (var step in route.detailedSteps) {
+          final stepDuration = step.durationMinutes as int;
+          if (timeSinceStart < accumMinutes + stepDuration) {
+            currentStep = step;
+            stepStartMin = accumMinutes;
+            break;
+          }
+          accumMinutes += stepDuration;
+        }
+
+        if (currentStep != null) {
+          // ステップの開始・終了時刻を計算
+          final stepStartTime = route.time.add(Duration(minutes: stepStartMin));
+          final stepEndTime = stepStartTime.add(Duration(minutes: currentStep.durationMinutes));
+          
+          final startStr = "${stepStartTime.hour}:${stepStartTime.minute.toString().padLeft(2,'0')}";
+          final endStr = "${stepEndTime.hour}:${stepEndTime.minute.toString().padLeft(2,'0')}";
+          
+          String stepIcon = currentStep.transportType.stringIcon;
+          
+          // 表示: "🚃 TRAIN (10:00 - 10:20)"
+          stepInfo = '$stepIcon ($startStr - $endStr)';
+        } else {
+           // 計算誤差でステップ外にはみ出た場合
+           stepInfo = 'Arriving soon...';
+        }
       } else {
-        nextTime = (nextItem as RouteItem).time;
-        nextName = 'Move (${nextItem.transportType.name})';
+        // 詳細ステップがない場合 (直線移動など)
+        final endT = route.time.add(Duration(minutes: route.durationMinutes));
+        final endStr = "${endT.hour}:${endT.minute.toString().padLeft(2,'0')}";
+        stepInfo = 'Until $endStr';
       }
 
+      body = stepInfo;
+      plainBody = stepInfo;
+    } 
+    // B. 滞在中 (ScheduledItem) の場合
+    else if (currentItem is ScheduledItem) {
+      // --- メイン (Title): Now at [場所] ---
+      title = 'Now at <b>${currentItem.name}</b>';
+      plainTitle = 'Now at ${currentItem.name}';
+
+      // --- 下のところ (Body): Next [次の予定] ---
+      if (nextItem != null) {
+        DateTime nextTime;
+        String nextName = '';
+
+        if (nextItem is RouteItem) {
+           // 次が移動なら「Move to 〇〇」
+           final route = nextItem as RouteItem;
+           nextTime = route.time;
+           
+           String destName = 'Next Spot';
+           try {
+             final d = state.scheduleItems
+                .whereType<ScheduledItem>()
+                .firstWhere((i) => i.id == route.destinationItemId);
+             destName = d.name;
+           } catch (_) {}
+           
+           String icon = route.transportType.stringIcon;
+           nextName = 'Move to $destName ($icon)';
+        } else {
+           // 次が滞在ならそのまま場所名
+           final sch = nextItem as ScheduledItem;
+           nextTime = sch.time;
+           nextName = sch.name;
+        }
+
+        final timeStr = "${nextTime.hour}:${nextTime.minute.toString().padLeft(2,'0')}";
+        // 色をつけて強調
+        body = 'Next: <b>$nextName</b> ($timeStr)';
+        plainBody = 'Next: $nextName ($timeStr)';
+      } else {
+        body = 'End of the day';
+        plainBody = 'End of the day';
+      }
+    } 
+    // C. 予定と予定の隙間 (Free Time)
+    else if (nextItem != null) {
+      title = 'Free Time / Waiting';
+      plainTitle = 'Free Time / Waiting';
+      
+      // 次の予定を表示
+      final nextTime = (nextItem is ScheduledItem) ? nextItem.time : (nextItem as RouteItem).time;
       final timeStr = "${nextTime.hour}:${nextTime.minute.toString().padLeft(2,'0')}";
-      nextPlanStr = 'Next: <font color="#FF9800"><b>$nextName</b></font> ($timeStr)';
-      plainPlan = 'Next: $nextName ($timeStr)';
-    } else {
-      nextPlanStr = 'End of day';
-      plainPlan = 'End of day';
+      String nextName = (nextItem is ScheduledItem) ? nextItem.name : 'Move';
+      
+      body = 'Next: $nextName ($timeStr)';
+      plainBody = 'Next: $nextName ($timeStr)';
     }
 
+    // 通知更新実行
     await NotificationService().showOngoingNotification(
-      currentStatus: currentStatus,
-      nextPlan: nextPlanStr,
-      plainStatus: plainStatus,
-      plainPlan: plainPlan,
+      currentStatus: title,
+      nextPlan: body,
+      plainStatus: plainTitle,
+      plainPlan: plainBody,
     );
   }
   
@@ -896,7 +959,7 @@ class TripCubit extends Cubit<TripState> {
       ..sort((a, b) => a.time.compareTo(b.time));
   }
 
-  Future<RouteItem> _calculateRouteSegment({
+ Future<RouteItem> _calculateRouteSegment({
     required ScheduledItem startItem,
     required ScheduledItem nextItem,
     required DateTime startTime, 
@@ -904,18 +967,52 @@ class TripCubit extends Cubit<TripState> {
     RouteItem? existingRoute, 
     String? newRouteId, 
   }) async {
+    // 1. 座標があるかチェック
+    final hasCoords = startItem.latitude != null && startItem.longitude != null &&
+                      nextItem.latitude != null && nextItem.longitude != null;
+
+    // 🅰️ 座標がない場合: 「時間の隙間」をそのまま移動時間とする
+    if (!hasCoords) {
+      // 次の予定の開始時刻との差分 (マイナスなら0)
+      int gapMinutes = nextItem.time.difference(startTime).inMinutes;
+      if (gapMinutes < 0) gapMinutes = 0;
+
+      // 既存の移動手段があれば引き継ぐ
+      final type = existingRoute?.transportType ?? defaultTransport;
+
+      return RouteItem(
+        id: existingRoute?.id ?? newRouteId ?? const Uuid().v4(),
+        dayIndex: startItem.dayIndex,
+        time: startTime,
+        destinationItemId: nextItem.id,
+        durationMinutes: gapMinutes, // 隙間時間 = 移動時間
+        transportType: type,
+        polyline: null, // 地図には描けない
+        detailedSteps: [], // 詳細なし
+        startLatitude: null,
+        startLongitude: null,
+        endLatitude: null,
+        endLongitude: null,
+        cost: existingRoute?.cost ?? 0,
+        externalLink: null,
+      );
+    }
+
+    // 🅱️ 座標がある場合: 通常のルート計算 (API利用)
     final distance = const Distance().as(LengthUnit.Meter, 
         LatLng(startItem.latitude!, startItem.longitude!), 
         LatLng(nextItem.latitude!, nextItem.longitude!)
     );
     TransportType type = existingRoute?.transportType ?? (distance < 800 ? TransportType.walk : defaultTransport);
 
+    // 再利用判定
     if (existingRoute != null) {
       final isSameStart = (existingRoute.startLatitude! - startItem.latitude!).abs() < 0.0001 &&
                           (existingRoute.startLongitude! - startItem.longitude!).abs() < 0.0001;
       final isSameEnd   = (existingRoute.endLatitude! - nextItem.latitude!).abs() < 0.0001 &&
                           (existingRoute.endLongitude! - nextItem.longitude!).abs() < 0.0001;
       final isSameType  = existingRoute.transportType == type;
+      
       if (isSameStart && isSameEnd && isSameType && existingRoute.polyline != null) {
         return existingRoute.copyWith(
           id: newRouteId ?? const Uuid().v4(),
@@ -926,6 +1023,7 @@ class TripCubit extends Cubit<TripState> {
       }
     }
 
+    // APIコール
     final result = await _routingService.getRouteInfo(
       start: LatLng(startItem.latitude!, startItem.longitude!),
       end: LatLng(nextItem.latitude!, nextItem.longitude!),
@@ -963,6 +1061,7 @@ class TripCubit extends Cubit<TripState> {
     );
   }
 
+  // 🔥 修正: ループ内の「座標nullならcontinue」を削除
   Future<void> _recalculateAndSave({
     required String tripId,
     required List<ScheduledItem> sortedScheduledItems,
@@ -977,12 +1076,20 @@ class TripCubit extends Cubit<TripState> {
     for (int i = 0; i < sortedScheduledItems.length - 1; i++) {
       final current = sortedScheduledItems[i];
       final next = sortedScheduledItems[i + 1];
-      if (current.latitude == null || next.latitude == null) continue;
+      
+      // ⚠️ 削除: if (current.latitude == null || next.latitude == null) continue;
+      // これを消すことで、座標なしでも _calculateRouteSegment が呼ばれる
+
       final prevEndTime = current.time.add(Duration(minutes: current.durationMinutes ?? 60));
       final existing = routeMap[next.id]; 
+
       final route = await _calculateRouteSegment(
-        startItem: current, nextItem: next, startTime: prevEndTime, existingRoute: existing, 
+        startItem: current, 
+        nextItem: next, 
+        startTime: prevEndTime,
+        existingRoute: existing, 
       );
+      
       routesToSave.add(route);
       validRouteIds.add(route.id);
     }
@@ -1000,6 +1107,7 @@ class TripCubit extends Cubit<TripState> {
     await selectTrip(tripId);
   }
 
+  // --- addAIPlanToTrip (修正) ---
   Future<void> addAIPlanToTrip({required String tripId, required List<ScheduledItem> aiItems, TransportType defaultTransport = TransportType.transit}) async {
     try {
       emit(state.copyWith(status: TripStatus.submitting));
@@ -1011,20 +1119,24 @@ class TripCubit extends Cubit<TripState> {
       for (int i = 0; i < optimizedItems.length - 1; i++) {
         final current = optimizedItems[i];
         final next = optimizedItems[i + 1];
-        if (current.dayIndex != next.dayIndex || current.latitude == null || next.latitude == null) {
+        
+        // 日付またぎ以外はルートを作る (座標チェック削除)
+        if (current.dayIndex != next.dayIndex) {
            routesToAdd.add(null); continue; 
         }
+
         final currentEndTime = current.time.add(Duration(minutes: current.durationMinutes ?? 60));
+        
         final route = await _calculateRouteSegment(
           startItem: current, nextItem: next, startTime: currentEndTime,
           defaultTransport: defaultTransport, newRouteId: const Uuid().v4()
         );
+
         optimizedItems[i + 1] = next.copyWith(time: currentEndTime.add(Duration(minutes: route.durationMinutes))); 
         routesToAdd.add(route);
       }
       await _tripRepository.batchAddAIPlan(tripId: tripId, spots: optimizedItems, routes: routesToAdd);
       
-      // 再取得
       await loadMyTrips();
       await selectTrip(tripId);
     } catch (e) {

@@ -9,6 +9,12 @@ class AppTheme {
       useMaterial3: true,
       
       // 🎨 1. 色を直接指定 (AppColorsを使用)
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: AppColors.primary,
+        // 👇 背景色を明示的に指定
+        surface: AppColors.background, 
+        surfaceTint: Colors.white, // これが紫がかる原因なので白にする
+      ),
       scaffoldBackgroundColor: AppColors.background,
       primaryColor: AppColors.primary,
     
