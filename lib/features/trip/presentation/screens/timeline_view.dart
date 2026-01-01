@@ -485,8 +485,8 @@ class _TimelineViewState extends State<TimelineView> {
 class _DayTabsDelegate extends SliverPersistentHeaderDelegate {
   final int daysCount;
   final DateTime startDate;
-  final int selectedIndex; // 👈 追加
-  final Function(int) onTabTap; // 👈 追加
+  final int selectedIndex;
+  final Function(int) onTabTap;
 
   _DayTabsDelegate({
     required this.daysCount,
@@ -497,35 +497,30 @@ class _DayTabsDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    // 選択されたタブが見えるように自動スクロールさせたい場合は、
-    // ここでScrollablePositionedListなどを使うか、簡易的にanimateToを使う。
-    // 今回は標準のListViewなので、selectedIndexが変わっても自動追従はしないが、
-    // タップ操作には反応する。
-
     return Container(
       color: AppColors.background.withOpacity(0.95),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), // 👈 上下パディング調整
         itemCount: daysCount,
         itemBuilder: (context, index) {
           final currentDate = startDate.add(Duration(days: index));
           final dateText = DateFormat('MM/dd').format(currentDate);
           final weekDay = DateFormat('E').format(currentDate);
-          final isSelected = index == selectedIndex; // 👈 Stateから判定
+          final isSelected = index == selectedIndex;
 
           return GestureDetector(
-            onTap: () => onTabTap(index), // 👈 コールバック
-            child: AnimatedContainer( // アニメーションで色替え
+            onTap: () => onTabTap(index),
+            child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.only(right: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              margin: const EdgeInsets.only(right: 8), // 👈 マージン少し詰める 12->8
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), // 👈 パディング縮小
               decoration: BoxDecoration(
                 color: isSelected ? AppColors.primary : Colors.white,
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(20), // 👈 少し丸みを抑える 24->20
                 border: Border.all(color: isSelected ? Colors.transparent : Colors.grey.shade300),
                 boxShadow: isSelected ? [
-                  BoxShadow(color: AppColors.primary.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))
+                  BoxShadow(color: AppColors.primary.withOpacity(0.3), blurRadius: 6, offset: const Offset(0, 3))
                 ] : [],
               ),
               child: Column(
@@ -536,12 +531,14 @@ class _DayTabsDelegate extends SliverPersistentHeaderDelegate {
                     style: AppTextStyles.label.copyWith(
                       color: isSelected ? Colors.white : AppColors.textPrimary,
                       fontWeight: FontWeight.bold,
+                      fontSize: 12, // 👈 フォントサイズ明示的に小さく
                     ),
                   ),
+                  const SizedBox(height: 1), // 👈 間隔調整
                   Text(
                     '$dateText ($weekDay)',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 9, // 👈 フォントサイズ縮小 10->9
                       color: isSelected ? Colors.white70 : AppColors.textSecondary,
                     ),
                   ),
@@ -555,12 +552,13 @@ class _DayTabsDelegate extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  double get maxExtent => 80;
+  // 👇 高さを全体的に縮小 80 -> 64
+  double get maxExtent => 64;
   @override
-  double get minExtent => 80;
+  double get minExtent => 64;
+
   @override
   bool shouldRebuild(covariant _DayTabsDelegate oldDelegate) {
-    // 選択状態が変わったらリビルドが必要
     return oldDelegate.selectedIndex != selectedIndex || oldDelegate.daysCount != daysCount;
   }
 }

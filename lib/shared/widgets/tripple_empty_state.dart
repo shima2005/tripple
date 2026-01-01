@@ -23,8 +23,7 @@ class TrippleEmptyState extends StatelessWidget {
     return Center( // 親でExpandedされてることが多いのでCenterで囲む
       child: Container(
         width: double.infinity,
-        margin: const EdgeInsets.symmetric(horizontal: 24), // 画面端にくっつきすぎないように
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(24),

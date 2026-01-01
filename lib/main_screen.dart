@@ -284,7 +284,7 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 48),
+              padding: const EdgeInsets.only(bottom: 28),
               child: TrippleSpeedDial(
                 items: speedDialItems,
                 isMenuOpen: _isMenuOpen,

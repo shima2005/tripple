@@ -42,8 +42,9 @@ class SettingsScreen extends StatelessWidget {
                   
                   const SizedBox(height: 24),
 
-                  // 2. Social & Notifications
-                  _SectionHeader(title: 'Social & Notifications'),
+                  // 2. Social (分離！)
+                  // 友達リストはここへ。項目が増えても大丈夫なように独立させます。
+                  _SectionHeader(title: 'Social'),
                   _SettingsTile(
                     icon: Icons.group_rounded,
                     title: 'Friends',
@@ -54,7 +55,12 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
 
-                  // 通知メインスイッチ
+                  const SizedBox(height: 24),
+
+                  // 3. Notifications (分離！)
+                  _SectionHeader(title: 'Notifications'),
+                  
+                  // メインスイッチ
                   _SettingsTile(
                     icon: Icons.notifications_active_rounded,
                     title: 'Allow Notifications',
@@ -67,50 +73,41 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
 
-                  // 詳細設定
+                  // 詳細設定 (インデントPaddingを削除して、幅を親と統一！)
                   if (state.isNotificationEnabled) ...[
                     // 常時通知
-                    Padding(
-                      padding: const EdgeInsets.only(left: 16, bottom: 8),
-                      child: _SettingsTile(
-                        icon: Icons.navigation_rounded,
-                        title: 'Ongoing Travel Mode',
-                        trailing: Switch(
-                          value: state.isOngoingNotificationEnabled,
-                          activeColor: AppColors.primary,
-                          onChanged: (val) {
-                            context.read<SettingsCubit>().toggleOngoingNotification(val);
-                          },
-                        ),
+                    _SettingsTile(
+                      icon: Icons.navigation_rounded,
+                      title: 'Ongoing Travel Mode',
+                      trailing: Switch(
+                        value: state.isOngoingNotificationEnabled,
+                        activeColor: AppColors.primary,
+                        onChanged: (val) {
+                          context.read<SettingsCubit>().toggleOngoingNotification(val);
+                        },
                       ),
                     ),
                     
                     // リマインダー
-                    Padding(
-                      padding: const EdgeInsets.only(left: 16, bottom: 8),
-                      child: _SettingsTile(
-                        icon: Icons.alarm_rounded,
-                        title: 'Schedule Reminder',
-                        trailing: Switch(
-                          value: state.isReminderEnabled,
-                          activeColor: AppColors.primary,
-                          onChanged: (val) {
-                            context.read<SettingsCubit>().toggleReminder(val);
-                          },
-                        ),
+                    _SettingsTile(
+                      icon: Icons.alarm_rounded,
+                      title: 'Schedule Reminder',
+                      trailing: Switch(
+                        value: state.isReminderEnabled,
+                        activeColor: AppColors.primary,
+                        onChanged: (val) {
+                          context.read<SettingsCubit>().toggleReminder(val);
+                        },
                       ),
                     ),
 
-                    // リマインダー時間 (CupertinoPickerで選択)
+                    // リマインダー時間
                     if (state.isReminderEnabled)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 32, bottom: 12),
-                        child: _SettingsTile(
-                          icon: Icons.timer_outlined,
-                          title: 'Remind me before...',
-                          value: '${state.reminderMinutesBefore} min',
-                          onTap: () => _showReminderTimePicker(context, state.reminderMinutesBefore),
-                        ),
+                      _SettingsTile(
+                        icon: Icons.timer_outlined,
+                        title: 'Remind me before...',
+                        value: '${state.reminderMinutesBefore} min',
+                        onTap: () => _showReminderTimePicker(context, state.reminderMinutesBefore),
                       ),
                   ],
 
@@ -177,20 +174,13 @@ class SettingsScreen extends StatelessWidget {
                   const SizedBox(height: 40),
                   
                   // Log Out
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton.icon(
-                      onPressed: () => _showLogoutDialog(context),
-                      icon: const Icon(Icons.logout_rounded, color: AppColors.textSecondary),
-                      label: Text('Log Out', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        backgroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      ),
-                    ),
+                  _SettingsTile(
+                    icon: Icons.logout_rounded,
+                    title: 'Log Out',
+                    // 必要なら矢印を消してもいいけど、統一感重視でそのままでもOK
+                    // trailing: const SizedBox.shrink(), 
+                    onTap: () => _showLogoutDialog(context),
                   ),
-                  const SizedBox(height: 16),
 
                   // Delete Account
                   Center(
@@ -449,32 +439,32 @@ class _UserProfileCard extends StatelessWidget {
         final photo = profile?.photoUrl ?? user.photoURL;
 
         return Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12), // 👈 16->12
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))],
+            borderRadius: BorderRadius.circular(16), // 👈 20->16
+            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 3))],
           ),
           child: Row(
             children: [
               CircleAvatar(
-                radius: 30,
+                radius: 24, // 👈 30->24
                 backgroundColor: Colors.grey[200],
                 backgroundImage: photo != null ? CachedNetworkImageProvider(photo) : null,
                 child: photo == null
-                    ? const Icon(Icons.person_rounded, size: 32, color: Colors.grey)
+                    ? const Icon(Icons.person_rounded, size: 28, color: Colors.grey)
                     : null,
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12), // 👈 16->12
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       isGuest ? 'Guest User' : name,
-                      style: AppTextStyles.h3.copyWith(fontSize: 18),
+                      style: AppTextStyles.h3.copyWith(fontSize: 16), // 👈 18->16
                     ),
-                    Text(id, style: AppTextStyles.label.copyWith(color: Colors.grey)),
+                    Text(id, style: AppTextStyles.label.copyWith(color: Colors.grey, fontSize: 11)), // 👈 調整
                     
                     if (isGuest)
                       GestureDetector(
@@ -482,12 +472,12 @@ class _UserProfileCard extends StatelessWidget {
                           context.read<SettingsCubit>().linkAccount(context);
                         },
                         child: Padding(
-                          padding: const EdgeInsets.only(top: 4),
+                          padding: const EdgeInsets.only(top: 2),
                           child: Row(
                             children: [
-                              Icon(Icons.link_rounded, size: 16, color: AppColors.accent),
+                              Icon(Icons.link_rounded, size: 14, color: AppColors.accent),
                               const SizedBox(width: 4),
-                              Text('Link Account', style: AppTextStyles.label.copyWith(color: AppColors.accent, decoration: TextDecoration.underline, fontWeight: FontWeight.bold)),
+                              Text('Link Account', style: AppTextStyles.label.copyWith(color: AppColors.accent, decoration: TextDecoration.underline, fontWeight: FontWeight.bold, fontSize: 11)),
                             ],
                           ),
                         ),
@@ -497,7 +487,7 @@ class _UserProfileCard extends StatelessWidget {
               ),
               if (!isGuest)
                 IconButton(
-                  icon: const Icon(Icons.edit_rounded, color: Colors.grey),
+                  icon: const Icon(Icons.edit_rounded, color: Colors.grey, size: 20), // 👈 アイコン小さく
                   onPressed: () {
                     showModalBottomSheet(
                       context: context,
@@ -529,24 +519,25 @@ class _CountrySelector extends StatelessWidget {
     final bool valueExists = countries.any((c) => c['code']?.toLowerCase() == normalizedValue);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+      // 👇 高さをSettingsTileに合わせるためパディング調整
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)), // 👈 16->12
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: valueExists ? normalizedValue : null, 
-          hint: Text('Select Home Country', style: AppTextStyles.bodyMedium),
+          hint: Text('Select Home Country', style: AppTextStyles.bodyMedium.copyWith(fontSize: 14)),
           isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
           onChanged: onChanged,
           items: [
-            const DropdownMenuItem(value: null, child: Text('None (Include all in stats)')),
+            const DropdownMenuItem(value: null, child: Text('None (Include all in stats)', style: TextStyle(fontSize: 14))),
             ...countries.map((c) => DropdownMenuItem(
               value: c['code']?.toLowerCase(),
               child: Row(
                 children: [
-                  Text(c['code']!.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                  Text(c['code']!.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 13)),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(c['name']!, overflow: TextOverflow.ellipsis)),
+                  Expanded(child: Text(c['name']!, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14))),
                 ],
               ),
             )),
@@ -579,14 +570,19 @@ class _HomeTownInputState extends State<_HomeTownInput> {
   @override
   Widget build(BuildContext context) {
     return Container(
+      // 👇 高さを合わせる
+      height: 48, 
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)), // 👈 16->12
       child: TextField(
         controller: _controller,
+        style: const TextStyle(fontSize: 14), // 👈 文字サイズ調整
         decoration: const InputDecoration(
           hintText: 'Home Town (e.g. Kyoto)',
+          hintStyle: TextStyle(fontSize: 14, color: Colors.grey),
           border: InputBorder.none,
-          icon: Icon(Icons.home_rounded, color: Colors.grey),
+          icon: Icon(Icons.home_rounded, color: Colors.grey, size: 20), // 👈 アイコンサイズ
+          contentPadding: EdgeInsets.only(bottom: 2), // 位置微調整
         ),
         onSubmitted: widget.onSubmitted,
       ),
@@ -606,25 +602,28 @@ class _SettingsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+      margin: const EdgeInsets.only(bottom: 8), // 👈 マージン縮小 12->8
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)), // 👈 半径縮小 16->12
       child: ListTile(
+        dense: true, // 👈 ★これで全体をコンパクトにする！
+        visualDensity: const VisualDensity(vertical: -1), // 👈 さらに縦幅を詰める
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0), // 👈 パディング調整
         leading: Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(6), // 👈 8->6
           decoration: BoxDecoration(color: AppColors.background, shape: BoxShape.circle),
-          child: Icon(icon, color: AppColors.textPrimary, size: 20),
+          child: Icon(icon, color: AppColors.textPrimary, size: 18), // 👈 20->18
         ),
-        title: Text(title, style: AppTextStyles.bodyLarge.copyWith(fontSize: 15)),
+        title: Text(title, style: AppTextStyles.bodyLarge.copyWith(fontSize: 14)), // 👈 15->14
         trailing: trailing ?? Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (value != null) Text(value!, style: AppTextStyles.label.copyWith(fontSize: 13)),
-            const SizedBox(width: 8),
-            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
+            if (value != null) Text(value!, style: AppTextStyles.label.copyWith(fontSize: 12)), // 👈 13->12
+            const SizedBox(width: 6),
+            const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.grey), // 👈 14->12
           ],
         ),
         onTap: onTap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }

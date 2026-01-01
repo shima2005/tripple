@@ -62,19 +62,15 @@ class _TravelHomeScreenState extends State<TravelHomeScreen> {
                       children: [
                         // Future Trips
                         if (futureTrips.isEmpty)
-                          const AspectRatio(
-                            aspectRatio: 1.6,
-                              child: Padding(
-                              padding: EdgeInsets.only(top: 40), // 少し上を開けるとバランス良し
-                              child: TrippleEmptyState(
-                                title: 'No trips planned yet',
-                                message: 'Tap the "+" button below to start planning your next adventure!',
-                                icon: Icons.flight_takeoff_rounded,
-                                accentColor: AppColors.accent,
-                              ),
+                          const Padding(
+                            padding: EdgeInsets.only(top: 40), // 少し上を開けるとバランス良し
+                            child: TrippleEmptyState(
+                              title: 'No trips planned yet',
+                              message: 'Tap the "+" button below to start planning your next adventure!',
+                              icon: Icons.flight_takeoff_rounded,
+                              accentColor: AppColors.accent,
                             ),
-                          ) 
-                          
+                          )
                         else
                           ...futureTrips.map((trip) => TripCard(
                             trip: trip,

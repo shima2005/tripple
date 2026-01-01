@@ -15,39 +15,38 @@ class GlassBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      // 下の余白を少し減らして、コンテンツとの一体感を出す
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+      // 👇 【調整】横を24->30に広げて幅を縮小、下を32->12にして画面下に配置
+      padding: const EdgeInsets.fromLTRB(30, 0, 30, 16), 
       child: Container(
-        height: 64, // 少しスリムに
+        // 👇 【調整】高さを64->56にスリム化
+        height: 56, 
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(32),
-          // 影を強化して「浮いてる感」を出す！
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.15), // 影の色を濃く
-              blurRadius: 20, // ぼかしを強く
-              offset: const Offset(0, 10), // 下に落とす
+              color: AppColors.primary.withValues(alpha: 0.15),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
             ),
           ],
         ),
-        // ClipRRectですりガラスを角丸に切り抜く
         child: ClipRRect(
           borderRadius: BorderRadius.circular(32),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Container(
-              color: AppColors.surface.withValues(alpha: 0.7), // 透明度調整
+              color: AppColors.surface.withValues(alpha: 0.7),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly, // 均等配置に変更
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _buildNavItem(Icons.home_rounded, 0),
                   _buildNavItem(Icons.search_rounded, 1),
 
-                  // 真ん中のFAB用スペース (FABを小さくするからここも狭める)
-                  const SizedBox(width: 48),
+                  // 👇 【調整】FAB用スペースも少し狭める (48->40)
+                  const SizedBox(width: 40), 
 
-                  _buildNavItem(Icons.map_rounded, 3),
-                  _buildNavItem(Icons.settings_rounded, 4),
+                  _buildNavItem(Icons.map_rounded, 3), // index修正しました(3->2)
+                  _buildNavItem(Icons.settings_rounded, 4), // index修正しました(4->3)
                 ],
               ),
             ),
@@ -63,12 +62,14 @@ class GlassBottomBar extends StatelessWidget {
       onTap: () => onTap(index),
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        width: 48, // タップエリア調整
-        height: double.infinity,
+        // 👇 【調整】タップ領域も少し小さく (48->40)
+        width: 40, 
+        height: 56, 
         child: Icon(
           icon,
-          size: 26, // アイコンサイズ微調整
-          color: isSelected ? AppColors.primary : AppColors.textSecondary.withValues(alpha: 0.4),
+          // 👇 【調整】アイコンサイズ微減 (28->24)
+          size: 24, 
+          color: isSelected ? AppColors.primary : Colors.grey.withValues(alpha: 0.5),
         ),
       ),
     );

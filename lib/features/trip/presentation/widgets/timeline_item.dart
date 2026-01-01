@@ -63,8 +63,8 @@ class _TimelineLayoutHelper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 👇 幅を少し詰めてカード領域を確保
-    const double timeWidth = 44; // 50 -> 44
-    const double axisWidth = 24; // 32 -> 24
+    const double timeWidth = 44; 
+    const double axisWidth = 24;
     const double leftOffset = timeWidth;
 
     return Stack(
@@ -87,11 +87,11 @@ class _TimelineLayoutHelper extends StatelessWidget {
             SizedBox(
               width: timeWidth,
               child: Padding(
-                padding: const EdgeInsets.only(top: 24, left: 4), // left詰め
+                padding: const EdgeInsets.only(top: 24, left: 4),
                 child: Text(
                   timeText,
                   style: AppTextStyles.label.copyWith(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
-                  textAlign: TextAlign.start, // 👈 左詰め
+                  textAlign: TextAlign.start,
                 ),
               ),
             ),
@@ -113,7 +113,7 @@ class _TimelineLayoutHelper extends StatelessWidget {
               child: Padding(
                 padding: isRoute 
                     ? const EdgeInsets.fromLTRB(0, 16, 0, 0)
-                    : const EdgeInsets.fromLTRB(12, 0, 0, 24), // 左余白を少し減らす 16->12
+                    : const EdgeInsets.fromLTRB(12, 0, 0, 24),
                 child: content,
               ),
             ),
@@ -150,19 +150,19 @@ class _ScheduledRow extends StatelessWidget {
       isLast: isLast,
       timeText: startTime,
       centerNode: Container(
-        width: 24, // 32 -> 24
+        width: 24,
         height: 24,
         decoration: BoxDecoration(
           color: Colors.white,
           shape: BoxShape.circle,
           border: Border.all(color: AppColors.primary, width: 2),
           boxShadow: [
-            BoxShadow(color: AppColors.primary.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2)),
+            BoxShadow(color: AppColors.primary.withValues(alpha: 0.2), blurRadius: 4, offset: const Offset(0, 2)),
           ],
         ),
         child: Icon(
           item.category.icon,
-          size: 14, // 16 -> 14
+          size: 14,
           color: AppColors.primary,
         ),
       ),
@@ -185,151 +185,160 @@ class _ScheduledCardContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasLocation = item.latitude != null && item.longitude != null;
+    final hasMemo = item.notes != null && item.notes!.isNotEmpty;
 
     return Container(
-      height: 100, // 高さを固定気味にしてスリムに見せる (IntrinsicHeightをやめて高速化も兼ねる)
+      // height: 100, // 👈 固定高さを削除
+      constraints: const BoxConstraints(minHeight: 70), // メモなし時はコンパクトに
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [BoxShadow(color: AppColors.shadow, blurRadius: 6, offset: Offset(0, 3))],
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 1. 画像エリア (幅を80に縮小)
-          ClipRRect(
-            borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
-            child: SizedBox(
-              width: 80, // 100 -> 80
-              child: item.imageUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: item.imageUrl!,
-                      fit: BoxFit.cover,
-                      placeholder: (context, url) => Container(color: Colors.grey[100]),
-                      errorWidget: (context, url, error) => Container(
-                        color: Colors.grey[200],
-                        child: const Icon(Icons.broken_image, color: Colors.grey),
-                      ),
-                    )
-                  : Container(
-                      color: AppColors.primary.withOpacity(0.05),
-                      child: Center(
-                        child: Icon(
-                          item.category.icon,
-                          color: AppColors.primary.withOpacity(0.5),
-                          size: 28,
+      // 👇 画像とコンテンツの高さを揃えるためにIntrinsicHeightを使用 (リスト項目数が少ないためパフォーマンス影響は軽微)
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 1. 画像エリア
+            ClipRRect(
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+              child: SizedBox(
+                width: 80,
+                child: item.imageUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: item.imageUrl!,
+                        fit: BoxFit.cover,
+                        // heightを指定しないことで、IntrinsicHeightにより親の高さに合わせて伸縮
+                        placeholder: (context, url) => Container(color: Colors.grey[100]),
+                        errorWidget: (context, url, error) => Container(
+                          color: Colors.grey[200],
+                          child: const Icon(Icons.broken_image, color: Colors.grey),
+                        ),
+                      )
+                    : Container(
+                        color: AppColors.primary.withValues(alpha: 0.05),
+                        child: Center(
+                          child: Icon(
+                            item.category.icon,
+                            color: AppColors.primary.withValues(alpha: 0.5),
+                            size: 28,
+                          ),
                         ),
                       ),
-                    ),
+              ),
             ),
-          ),
-
-          // 2. 情報エリア
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), // パディング削減
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // タイトル
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.name,
-                          style: AppTextStyles.h3.copyWith(fontSize: 15),
-                          maxLines: 1, // 1行にしてスッキリさせる
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  
-                  // 時間とコスト (Overflow対策: Flexibleを使用)
-                  Row(
-                    children: [
-                      Icon(Icons.access_time_rounded, size: 12, color: AppColors.textSecondary),
-                      const SizedBox(width: 4),
-                      // 👇 ここでFlexibleを使ってはみ出しを防ぐ
-                      Flexible(
-                        child: Text(
-                          timeRange,
-                          style: AppTextStyles.label.copyWith(fontSize: 10),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      
-                      if (item.cost != null) ...[
-                        const SizedBox(width: 8),
-                        Icon(Icons.attach_money_rounded, size: 12, color: AppColors.textSecondary),
+      
+            // 2. 情報エリア
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center, // コンテンツが少ないときは中央寄せ
+                  children: [
+                    // タイトル
+                    Text(
+                      item.name,
+                      style: AppTextStyles.h3.copyWith(fontSize: 15),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    
+                    // 時間
+                    Row(
+                      children: [
+                        Icon(Icons.access_time_rounded, size: 12, color: AppColors.textSecondary),
+                        const SizedBox(width: 4),
                         Flexible(
                           child: Text(
-                            '${item.cost!.toInt()}',
+                            timeRange,
                             style: AppTextStyles.label.copyWith(fontSize: 10),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
-                    ],
-                  ),
+                    ),
 
-                  const Spacer(),
-
-                  // メモ欄 (存在する場合のみ)
-                  if (item.notes != null && item.notes!.isNotEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.background,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
+                    // コスト (👇 時間とは別の行に表示)
+                    if (item.cost != null) ...[
+                      const SizedBox(height: 2),
+                      Row(
                         children: [
-                          const Icon(Icons.sticky_note_2_rounded, size: 10, color: Colors.grey),
+                          Icon(Icons.attach_money_rounded, size: 12, color: AppColors.textSecondary),
                           const SizedBox(width: 4),
-                          Expanded(
+                          Flexible(
                             child: Text(
-                              item.notes!,
-                              style: AppTextStyles.bodyMedium.copyWith(fontSize: 10, color: Colors.grey[700]),
-                              maxLines: 1, // 👈 1行に制限して、はみ出しは省略
+                              '${item.cost!.toInt()}',
+                              style: AppTextStyles.label.copyWith(fontSize: 10),
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-
-          // 3. 地図ボタン (右端)
-          if (hasLocation)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  GestureDetector(
-                    onTap: () => onMapTap?.call(),
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        shape: BoxShape.circle,
+                    ],
+      
+                    // メモ欄 (👇 存在する場合のみ表示。maxLinesで高さを制限)
+                    if (hasMemo) ...[
+                      const SizedBox(height: 8), // 少し余白
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start, // アイコンを上揃え
+                          children: [
+                            const Padding(
+                              padding: EdgeInsets.only(top: 2),
+                              child: Icon(Icons.sticky_note_2_rounded, size: 10, color: Colors.grey),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                item.notes!,
+                                style: AppTextStyles.bodyMedium.copyWith(fontSize: 10, color: Colors.grey[700]),
+                                maxLines: 2, // 👈 2行までに制限して高さを抑える
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: const Icon(Icons.map_rounded, size: 18, color: AppColors.primary),
-                    ),
-                  ),
-                ],
+                    ],
+                  ],
+                ),
               ),
             ),
-        ],
+      
+            // 3. 地図ボタン (右端)
+            if (hasLocation)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    GestureDetector(
+                      onTap: () => onMapTap?.call(),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.map_rounded, size: 18, color: AppColors.primary),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -351,6 +360,27 @@ class _RouteRow extends StatefulWidget {
 class _RouteRowState extends State<_RouteRow> {
   bool _isExpanded = false;
 
+  // 👇 アイコンボタンの共通デザイン
+  Widget _buildUnifiedIconButton({required Widget child, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 30, 
+        height: 30, // 👈 サイズを統一
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.grey.shade200), // 薄いボーダーで統一感
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 1))
+          ],
+        ),
+        child: Center(child: child),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final startTime = DateFormat('HH:mm').format(widget.item.time);
@@ -364,7 +394,7 @@ class _RouteRowState extends State<_RouteRow> {
       isRoute: true,
       timeText: startTime,
       centerNode: Container(
-        height: 24, width: 24, // 28 -> 24
+        height: 24, width: 24, 
         decoration: BoxDecoration(
           color: AppColors.background,
           shape: BoxShape.circle,
@@ -380,7 +410,7 @@ class _RouteRowState extends State<_RouteRow> {
             onTap: () => setState(() => _isExpanded = !_isExpanded),
             child: Container(
               margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.fromLTRB(10, 6, 6, 6), // パディング調整
+              padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
               decoration: BoxDecoration(
                 color: AppColors.background,
                 borderRadius: BorderRadius.circular(8),
@@ -424,13 +454,11 @@ class _RouteRowState extends State<_RouteRow> {
                       ),
                       const SizedBox(width: 8),
 
-                      // 👇 ここに追加: Google Maps ボタン
+                      // Google Maps ボタン
                       if (hasCoords) ...[
-                        GestureDetector(
+                        _buildUnifiedIconButton(
                           onTap: () {
                              String url = widget.item.externalLink ?? '';
-                             
-                             // URLがない場合、その場でGoogle MapsのURLを生成する
                              if (url.isEmpty) {
                                final start = '${widget.item.startLatitude},${widget.item.startLongitude}';
                                final end = '${widget.item.endLatitude},${widget.item.endLongitude}';
@@ -443,45 +471,23 @@ class _RouteRowState extends State<_RouteRow> {
                                
                                // Universal Link (アプリ/ブラウザ両対応)
                                url = 'https://www.google.com/maps/dir/?api=1&origin=$start&destination=$end&travelmode=$mode';
+                               // 注: 実際の実装ではRoutingServiceに緯度経度を渡して生成するのが一般的ですが
+                               // 既存コードのロジックに従い簡易化しています
                              }
-
-                             // ルーティングサービスを使って開く
                              RoutingService().openExternalMaps(url);
                           },
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)), 
-                              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)],
-                            ),
-                            child: Image.asset(
-                              'assets/images/google_maps.png', 
-                              width: 20, 
-                              height: 20,
-                              errorBuilder: (context, error, stackTrace) {
-                                // 画像がない時のフォールバック
-                                return const Icon(Icons.pin_drop, size: 16, color: AppColors.primary);
-                              },
-                            ),
+                          child: Image.asset(
+                            'assets/images/google_maps.png', 
+                            fit: BoxFit.contain, // アイコン内に収める
                           ),
                         ),
                         const SizedBox(width: 8), 
                       ],
 
-                      // 編集ボタン (既存のまま)
-                      GestureDetector(
-                        onTap: widget.onEdit,
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4)],
-                          ),
-                          child: const Icon(Icons.edit_rounded, size: 14, color: Colors.grey),
-                        ),
+                      // 編集ボタン
+                      _buildUnifiedIconButton(
+                        onTap: widget.onEdit ?? () {},
+                        child: const Icon(Icons.edit_rounded, size: 16, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -513,13 +519,13 @@ class _RouteRowState extends State<_RouteRow> {
   }
 
   Widget _buildStepRow(StepDetail step) {
+    // 既存の実装をそのまま維持
     final stepTime = step.departureTime != null ? DateFormat('HH:mm').format(step.departureTime!) : '';
 
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 左のガイド
           SizedBox(
             width: 24,
             child: Column(
@@ -540,8 +546,6 @@ class _RouteRowState extends State<_RouteRow> {
             ),
           ),
           const SizedBox(width: 8),
-          
-          // 中身
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -550,15 +554,12 @@ class _RouteRowState extends State<_RouteRow> {
                 children: [
                   if (stepTime.isNotEmpty)
                     Padding(
-                      // 👇 位置調整: アイコンの中心あたりに来るように top: 3 くらいに設定
                       padding: const EdgeInsets.only(right: 6, top: 3),
                       child: Text(
                         stepTime,
                         style: AppTextStyles.label.copyWith(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                       ),
                     ),
-                  
-                  // 詳細テキスト
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -586,8 +587,6 @@ class _RouteRowState extends State<_RouteRow> {
                       ],
                     ),
                   ),
-                  
-                  // 所要時間
                   Padding(
                     padding: const EdgeInsets.only(left: 4),
                     child: Text(
