@@ -73,43 +73,52 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
 
-                  // 詳細設定 (インデントPaddingを削除して、幅を親と統一！)
-                  if (state.isNotificationEnabled) ...[
-                    // 常時通知
-                    _SettingsTile(
-                      icon: Icons.navigation_rounded,
-                      title: 'Ongoing Travel Mode',
-                      trailing: Switch(
-                        value: state.isOngoingNotificationEnabled,
-                        activeColor: AppColors.primary,
-                        onChanged: (val) {
-                          context.read<SettingsCubit>().toggleOngoingNotification(val);
-                        },
-                      ),
-                    ),
-                    
-                    // リマインダー
-                    _SettingsTile(
-                      icon: Icons.alarm_rounded,
-                      title: 'Schedule Reminder',
-                      trailing: Switch(
-                        value: state.isReminderEnabled,
-                        activeColor: AppColors.primary,
-                        onChanged: (val) {
-                          context.read<SettingsCubit>().toggleReminder(val);
-                        },
-                      ),
-                    ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.topCenter,
+                    child: Column(
+                      children: [
+                        // isNotificationEnabled が true の時だけ中身を表示
+                        // false の時は空のColumnになり、高さが0になる → AnimatedSizeがそれをアニメーションで表現
+                        if (state.isNotificationEnabled) ...[
+                          _SettingsTile(
+                            icon: Icons.navigation_rounded,
+                            title: 'Ongoing Travel Mode',
+                            trailing: Switch(
+                              value: state.isOngoingNotificationEnabled,
+                              activeColor: AppColors.primary,
+                              onChanged: (val) {
+                                context.read<SettingsCubit>().toggleOngoingNotification(val);
+                              },
+                            ),
+                          ),
+                          
+                          // リマインダー
+                          _SettingsTile(
+                            icon: Icons.alarm_rounded,
+                            title: 'Schedule Reminder',
+                            trailing: Switch(
+                              value: state.isReminderEnabled,
+                              activeColor: AppColors.primary,
+                              onChanged: (val) {
+                                context.read<SettingsCubit>().toggleReminder(val);
+                              },
+                            ),
+                          ),
 
-                    // リマインダー時間
-                    if (state.isReminderEnabled)
-                      _SettingsTile(
-                        icon: Icons.timer_outlined,
-                        title: 'Remind me before...',
-                        value: '${state.reminderMinutesBefore} min',
-                        onTap: () => _showReminderTimePicker(context, state.reminderMinutesBefore),
-                      ),
-                  ],
+                          // リマインダー時間
+                          if (state.isReminderEnabled)
+                            _SettingsTile(
+                              icon: Icons.timer_outlined,
+                              title: 'Remind me before...',
+                              value: '${state.reminderMinutesBefore} min',
+                              onTap: () => _showReminderTimePicker(context, state.reminderMinutesBefore),
+                            ),
+                        ],
+                      ],
+                    ),
+                  ),
 
                   const SizedBox(height: 24),
 

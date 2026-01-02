@@ -27,7 +27,6 @@ import 'package:new_tripple/features/settings/presentation/screens/settings_scre
 import 'package:new_tripple/shared/widgets/tripple_speed_dial.dart';
 import 'package:new_tripple/features/user/data/user_repository.dart';
 
-
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
 
@@ -38,11 +37,19 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateMixin {
 
   Trip? _selectedTrip;
-
   int _currentIndex = 0;
   bool _isMenuOpen = false;
   LatLng? _mapInitialFocus;
   bool _showNotifications = false;
+  
+  // 👇 PageControllerを追加
+  final PageController _pageController = PageController();
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   void _toggleMenu() {
     setState(() {
@@ -50,7 +57,6 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     });
   }
 
-  // 👇 追加: 過去の旅行を記録するモーダルを開く処理
   void _openRecordPastTripModal() {
     showModalBottomSheet(
       context: context,
@@ -60,135 +66,58 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     );
   }
 
+  // 👇 ページ切り替え処理
+  void _onTabTapped(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+    // アニメーションでページ移動
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  // 👇 マップなどからタブを強制移動する場合の処理
+  void _jumpToTab(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+    // 長距離移動でも自然に見えるようjumpではなくanimate推奨ですが、
+    // 即座に切り替えたい場合は jumpToPage を使ってもOKです
+    _pageController.jumpToPage(index); 
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool showFab = _currentIndex != 4;
-    // 地図モードかどうか
     final bool isMapMode = _currentIndex == 3 && _selectedTrip == null;
-
     final bool showNotification = (_currentIndex == 0 || _currentIndex == 1 || _currentIndex == 4) && _selectedTrip == null;
 
     if (!showFab && _isMenuOpen) {
       _toggleMenu();
     }
 
+    // --- FAB Menu Logic (省略せず維持) ---
     List<SpeedDialItem> speedDialItems = [];
-
     if(_currentIndex == 1){
       speedDialItems = [
-        SpeedDialItem(
-          label: '旅行記を投稿',
-          icon: Icons.article_rounded,
-          color: AppColors.primary,
-          onTap: () { // 念のため async に
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => const CreatePostScreen(),
-                fullscreenDialog: true,
-              ),
-            ).then((_) {
-              // 戻ってきたらメニューを閉じる
-              if (_isMenuOpen) _toggleMenu();
-            });
-          }
-        ),
+        SpeedDialItem(label: '旅行記を投稿', icon: Icons.article_rounded, color: AppColors.primary, onTap: () { 
+            Navigator.of(context).push(MaterialPageRoute(builder: (context) => const CreatePostScreen(), fullscreenDialog: true)).then((_) { if (_isMenuOpen) _toggleMenu(); });
+        }),
       ];
     } else if (!isMapMode && _selectedTrip == null) {
-      // ホーム画面用メニュー
       speedDialItems = [
-        SpeedDialItem(
-          label: 'AIに提案してもらう',
-          icon: Icons.auto_awesome,
-          color: AppColors.primary,
-          onTap: () {_toggleMenu();
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (context) => AITripPlanModal(
-                onTripCreated: (trip) {
-                  // 👇 作成されたTripを受け取って、詳細画面へ遷移！
-                  setState(() {
-                    _selectedTrip = trip;
-                    _currentIndex = 0; // Homeタブへ
-                  });
-                },
-              ),
-            );
-          },
-        ),
-        SpeedDialItem(
-          label: '手動で作成',
-          icon: Icons.edit_rounded,
-          onTap: () {
-            _toggleMenu();
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (context) => const TripEditModal(),
-            );
-          },
-        ),
-        SpeedDialItem(
-          label: 'コードで参加',
-          icon: Icons.qr_code_rounded,
-          onTap: () {
-            _toggleMenu();
-            // 👇 JoinModalを開く
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true, // 全画面スキャナを使うので必須
-              backgroundColor: Colors.transparent,
-              builder: (context) => const JoinTripModal(),
-            );
-          },
-        ),
+        SpeedDialItem(label: 'AIに提案してもらう', icon: Icons.auto_awesome, color: AppColors.primary, onTap: () {_toggleMenu(); showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => AITripPlanModal(onTripCreated: (trip) { setState(() { _selectedTrip = trip; _jumpToTab(0); }); },),); },),
+        SpeedDialItem(label: '手動で作成', icon: Icons.edit_rounded, onTap: () { _toggleMenu(); showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => const TripEditModal(),); },),
+        SpeedDialItem(label: 'コードで参加', icon: Icons.qr_code_rounded, onTap: () { _toggleMenu(); showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => const JoinTripModal(),); },),
       ];
     } else if (!isMapMode && _selectedTrip != null) {
-      // 詳細画面用メニュー
       speedDialItems = [
-        SpeedDialItem(
-          label: '次の予定をAI提案',
-          icon: Icons.auto_awesome,
-          color: AppColors.accent,
-          onTap: () { 
-            _toggleMenu();
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (context) => AISuggestSpotModal(trip: _selectedTrip!),
-            );
-          },
-        ),
-        SpeedDialItem(
-          label: 'AIで日程を最適化',
-          icon: Icons.auto_awesome,
-          color: AppColors.accent,
-          onTap: () {
-            _toggleMenu();
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (context) => AIOptimizeModal(trip: _selectedTrip!),
-            );
-          },
-        ),
-        SpeedDialItem(
-          label: 'スポット手動追加',
-          icon: Icons.place_rounded,
-          onTap: () {
-            _toggleMenu();
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (context) => ScheduleEditModal(trip: _selectedTrip!, initialDateTime: _calculateNextScheduleTime(),)
-            );
-          },
-        ),
+        SpeedDialItem(label: '次の予定をAI提案', icon: Icons.auto_awesome, color: AppColors.accent, onTap: () { _toggleMenu(); showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => AISuggestSpotModal(trip: _selectedTrip!),); },),
+        SpeedDialItem(label: 'AIで日程を最適化', icon: Icons.auto_awesome, color: AppColors.accent, onTap: () { _toggleMenu(); showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => AIOptimizeModal(trip: _selectedTrip!),); },),
+        SpeedDialItem(label: 'スポット手動追加', icon: Icons.place_rounded, onTap: () { _toggleMenu(); showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (context) => ScheduleEditModal(trip: _selectedTrip!, initialDateTime: _calculateNextScheduleTime(),)); },),
       ];
     }
 
@@ -196,46 +125,41 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
       extendBody: true,
       body: Stack(
         children: [
-          IndexedStack(
-            index: _currentIndex,
+          // 👇 ここをPageViewに変更！
+          PageView(
+            controller: _pageController,
+            physics: const NeverScrollableScrollPhysics(), // スワイプでの切り替えを禁止（タブ操作のみ）
             children: [
               // Index 0
               _selectedTrip == null
                   ? TravelHomeScreen(
                       onTripSelected: (trip) {
-                        setState(() {
-                          _selectedTrip = trip; 
-                        });
+                        setState(() { _selectedTrip = trip; });
                       },
                     )
                   : TimelineView(
                       trip: _selectedTrip!,
                       onBack: () {
-                        setState(() {
-                          _selectedTrip = null; 
-                        });
+                        setState(() { _selectedTrip = null; });
                       },
                       onGoToMap: (location) {
-                        setState(() {
-                          _mapInitialFocus = location;
-                          _currentIndex = 3; 
-                        });
+                        setState(() { _mapInitialFocus = location; });
+                        _jumpToTab(3); // マップタブへジャンプ
                       },
                     ),
               
-              // Index 1,
+              // Index 1
               const DiscoverScreen(),
 
+              // Index 2 (Placeholder for FAB)
               const SizedBox(),
 
               // Index 3
               _selectedTrip == null
                   ? GlobalMapScreen(
                       onTripSelected: (trip) {
-                        setState(() {
-                          _selectedTrip = trip;
-                          _currentIndex = 0;
-                        });
+                        setState(() { _selectedTrip = trip; });
+                        _jumpToTab(0); // ホームタブへジャンプ
                       },
                     )
                   : BlocBuilder<TripCubit, TripState>(
@@ -247,13 +171,13 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
                           routeItems: routeItems,
                           scheduleItems: scheduledItems,
                           onBackTap: () {
-                            setState(() {
-                              _currentIndex = 0;
-                            });
+                            _jumpToTab(0); // ホームタブへジャンプ
                           },
                         );
                       },
                     ),
+              
+              // Index 4
               const SettingsScreen(),
             ],
           ),
@@ -262,25 +186,20 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
             Positioned.fill(
               child: GestureDetector(
                 onTap: _toggleMenu,
-                child: Container(
-                  color: Colors.black.withValues(alpha: 0.2),
-                ),
+                child: Container(color: Colors.black.withValues(alpha: 0.2)),
               ),
             ),
           
-
           // ボトムバー
           Positioned(
             left: 0, right: 0, bottom: 0,
             child: GlassBottomBar(
               currentIndex: _currentIndex,
-              onTap: (index) {
-                setState(() => _currentIndex = index);
-              },
+              onTap: _onTabTapped, // 👇 ここでアニメーション付き移動を呼び出す
             ),
           ),
 
-          // 4. メインのFAB
+          // FAB
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
@@ -296,16 +215,16 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
             ),
           ),
 
+          // 通知オーバーレイ
           if (_showNotifications)
             Positioned.fill(
               child: GestureDetector(
                 onTap: () => setState(() => _showNotifications = false),
-                behavior: HitTestBehavior.opaque, // 透明でもタッチを検知
+                behavior: HitTestBehavior.opaque,
                 child: Container(color: Colors.transparent),
               ),
             ),
 
-          // 5. 【修正】ポップアップ本体 (レイヤーより「後」に書く＝手前に表示)
           if (_showNotifications)
             Positioned(
               top: MediaQuery.of(context).padding.top + 70,
@@ -315,7 +234,6 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
               ),
             ),
 
-          // 6. 通知ボタン (一番手前)
           if (showNotification)
             Positioned(
               top: MediaQuery.of(context).padding.top + 20,
@@ -327,54 +245,24 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
     );
   }
 
-  // 通知ボタン (バッジ付き)
+  // (以下、_buildNotificationButton, _calculateNextScheduleTime は元のまま)
   Widget _buildNotificationButton() {
-    // ここでStreamBuilderを使って未読数を監視するのがベスト
-    // 今回は簡易的にアイコンのみ
     final userId = FirebaseAuth.instance.currentUser?.uid;
-    
     return StreamBuilder(
       stream: userId != null ? context.read<UserRepository>().getNotifications(userId) : const Stream.empty(),
       builder: (context, snapshot) {
         final count = (snapshot.data as List?)?.length ?? 0;
-        
         return GestureDetector(
           onTap: () => setState(() => _showNotifications = !_showNotifications),
           child: Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8, offset: const Offset(0, 2))
-              ],
-            ),
+            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8, offset: const Offset(0, 2))]),
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                Icon(
-                  _showNotifications ? Icons.notifications_active_rounded : Icons.notifications_rounded,
-                  color: _showNotifications ? AppColors.accent : Colors.grey,
-                  size: 24,
-                ),
+                Icon(_showNotifications ? Icons.notifications_active_rounded : Icons.notifications_rounded, color: _showNotifications ? AppColors.accent : Colors.grey, size: 24),
                 if (count > 0)
-                  Positioned(
-                    top: -2,
-                    right: -2,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                      child: Text(
-                        '$count',
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
+                  Positioned(top: -2, right: -2, child: Container(padding: const EdgeInsets.all(4), decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle), constraints: const BoxConstraints(minWidth: 16, minHeight: 16), child: Text('$count', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), textAlign: TextAlign.center))),
               ],
             ),
           ),
@@ -382,41 +270,16 @@ class _MainScreenState extends State<MainScreen> with SingleTickerProviderStateM
       }
     );
   }
-  // ヘルパー: 次の予定のデフォルト時間を計算
+
   DateTime _calculateNextScheduleTime() {
     final trip = _selectedTrip;
     if (trip == null) return DateTime.now();
-
-    // TripCubitの状態から最新のアイテムリストを取得
     final state = context.read<TripCubit>().state;
-    
-    // スケジュールが空なら、旅行の開始日の朝10時
-    if (state.scheduleItems.isEmpty) {
-      return DateTime(
-        trip.startDate.year, trip.startDate.month, trip.startDate.day, 
-        10, 0
-      );
-    }
-
-    // 最後のアイテムを取得
+    if (state.scheduleItems.isEmpty) return DateTime(trip.startDate.year, trip.startDate.month, trip.startDate.day, 10, 0);
     final lastItem = state.scheduleItems.last;
-    
-    // 最後のアイテムの時間を取得
     DateTime lastTime;
-    int duration = 60; // デフォルト1時間
-
-    if (lastItem is ScheduledItem) {
-      lastTime = lastItem.time;
-      duration = lastItem.durationMinutes ?? 60;
-    } else if (lastItem is RouteItem) {
-      lastTime = lastItem.time;
-      duration = lastItem.durationMinutes;
-    } else {
-      lastTime = trip.startDate;
-    }
-
-    // 「最後の予定の開始時間 + 所要時間 + 移動バッファ(30分)」を次の開始時間にする
-    // ※もし日付をまたぐ場合は、そのまま次の日の時間になるのでOK
+    int duration = 60; 
+    if (lastItem is ScheduledItem) { lastTime = lastItem.time; duration = lastItem.durationMinutes ?? 60; } else if (lastItem is RouteItem) { lastTime = lastItem.time; duration = lastItem.durationMinutes; } else { lastTime = trip.startDate; }
     return lastTime.add(Duration(minutes: duration + 30));
   }
 }

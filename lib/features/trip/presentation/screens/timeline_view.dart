@@ -446,15 +446,20 @@ class _TimelineViewState extends State<TimelineView> {
 
   // (以下、_buildHeaderImage, _buildDefaultHeaderGradient, _scrollToDay, _DayTabsDelegate はそのまま)
   Widget _buildHeaderImage(Trip trip) {
+    Widget image;
     if (trip.coverImageUrl != null && trip.coverImageUrl!.isNotEmpty) {
-      return CachedNetworkImage(
+      image = CachedNetworkImage(
         imageUrl: trip.coverImageUrl!,
         fit: BoxFit.cover,
         placeholder: (context, url) => Container(color: Colors.grey[200]),
         errorWidget: (context, url, error) => _buildDefaultHeaderGradient(),
       );
-    }
-    return _buildDefaultHeaderGradient();
+     }else{
+      image = _buildDefaultHeaderGradient();
+     } 
+     return Hero(
+      tag: 'trip-img-${trip.id}',
+      child: image);
   }
   
   Widget _buildDefaultHeaderGradient() {
