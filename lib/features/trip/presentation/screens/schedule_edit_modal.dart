@@ -113,203 +113,206 @@ class _ScheduleEditModalState extends State<ScheduleEditModal> {
       onScanImage: (img) => _handleScan(image: img),
       onScanText: (txt) => _handleScan(text: txt),
       
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. カテゴリ選択 (共通チップ使用)
-          Text('Category', style: AppTextStyles.label),
-          const SizedBox(height: 12),
-          ScrollConfiguration(
-            behavior: ScrollConfiguration.of(context).copyWith(
-              dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                children: ItemCategory.values.map((category) { 
-                  return TrippleSelectionChip(
-                    label: category.displayName,
-                    icon: category.icon,
-                    isSelected: _selectedCategory == category,
-                    onTap: () => setState(() => _selectedCategory = category),
-                  );
-                }).toList(),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 1. カテゴリ選択 (共通チップ使用)
+            Text('Category', style: AppTextStyles.label),
+            const SizedBox(height: 12),
+            ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
               ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // 2. 名前入力 & 場所検索
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end, // 下揃えにして、入力欄とボタンの底を合わせる
-            children: [
-              Expanded(
-                child: TrippleTextField(
-                  controller: _nameController,
-                  label: 'Spot Name',
-                  hintText: 'Ex: 清水寺, ランチ',
-                  // 👇 エンターキーで検索へ！
-                  onSubmitted: (value) {
-                    if (value.isNotEmpty) {
-                      _openPlaceSearch(query: value);
-                    }
-                  },
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  children: ItemCategory.values.map((category) { 
+                    return TrippleSelectionChip(
+                      label: category.displayName,
+                      icon: category.icon,
+                      isSelected: _selectedCategory == category,
+                      onTap: () => setState(() => _selectedCategory = category),
+                    );
+                  }).toList(),
                 ),
               ),
-              const SizedBox(width: 8),
-              
-              // 👇 ボタンの高さを合わせるハック
-              Column(
-                children: [
-                  // 左のTextFieldのラベルと同じ高さの透明なテキストを置いて、高さを稼ぐ
-                  Text(' ', style: AppTextStyles.label), 
-                  const SizedBox(height: 8),
-                  
-                  // 検索ボタン
-                  Container(
-                    height: 56, // TextFieldの高さ(デフォルト)に合わせる
-                    width: 56,
-                    decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.map_rounded, color: AppColors.accent),
-                      onPressed: () => _openPlaceSearch(query: _nameController.text),
-                    ),
+            ),
+            const SizedBox(height: 24),
+
+            // 2. 名前入力 & 場所検索
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end, // 下揃えにして、入力欄とボタンの底を合わせる
+              children: [
+                Expanded(
+                  child: TrippleTextField(
+                    controller: _nameController,
+                    label: 'Spot Name',
+                    hintText: 'Ex: 清水寺, ランチ',
+                    // 👇 エンターキーで検索へ！
+                    onSubmitted: (value) {
+                      if (value.isNotEmpty) {
+                        _openPlaceSearch(query: value);
+                      }
+                    },
                   ),
-                ],
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 24),
-
-          // 3. 日時と滞在時間 (モダン一体型UI)
-          Row(
-            children: [
-              // 日時選択 (一体型コンテナ)
-              Expanded(
-                flex: 5,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+                const SizedBox(width: 8),
+                
+                // 👇 ボタンの高さを合わせるハック
+                Column(
                   children: [
-                    Text('Date & Time', style: AppTextStyles.label),
+                    // 左のTextFieldのラベルと同じ高さの透明なテキストを置いて、高さを稼ぐ
+                    Text(' ', style: AppTextStyles.label), 
                     const SizedBox(height: 8),
+                    
+                    // 検索ボタン
                     Container(
-                      height: 56, // テキストフィールドと同じ高さに合わせる
+                      height: 56, // TextFieldの高さ(デフォルト)に合わせる
+                      width: 56,
                       decoration: BoxDecoration(
-                        color: AppColors.background,
+                        color: AppColors.accent.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey.shade300),
                       ),
-                      child: Row(
-                        children: [
-                          // 日付エリア
-                          Expanded(
-                            flex: 3,
-                            child: GestureDetector(
-                              onTap: _pickDate,
-                              behavior: HitTestBehavior.opaque,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
-                                  const SizedBox(width: 8),
-                                  Flexible(
-                                    child: Text(
-                                      DateFormat('MM/dd (E)').format(_selectedDate),
-                                      style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          
-                          // 区切り線
-                          Container(
-                            width: 1,
-                            height: 32,
-                            color: Colors.grey.shade300,
-                          ),
-
-                          // 時間エリア
-                          Expanded(
-                            flex: 2,
-                            child: GestureDetector(
-                              onTap: _pickTimeCupertino,
-                              behavior: HitTestBehavior.opaque,
-                              child: Center(
-                                child: Text(
-                                  '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
-                                  style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                      child: IconButton(
+                        icon: const Icon(Icons.map_rounded, color: AppColors.accent),
+                        onPressed: () => _openPlaceSearch(query: _nameController.text),
                       ),
                     ),
                   ],
                 ),
-              ),
-              
-              const SizedBox(width: 12),
-              
-              // 滞在時間 (共通部品使用)
-              Expanded(
-                flex: 2,
-                child: TrippleTextField(
-                  controller: _durationController,
-                  label: 'Min',
-                  hintText: '60',
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  onChanged: (_) => setState((){}),
-                ),
-              ),
-            ],
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 8, left: 4),
-            child: Text(
-              'Ends at: ${_calculateEndTime()}',
-              style: AppTextStyles.label.copyWith(color: AppColors.textSecondary),
+              ],
             ),
-          ),
-          const SizedBox(height: 24),
+            
+            const SizedBox(height: 24),
 
-          // 4. 費用 (共通部品使用)
-          TrippleTextField(
-            controller: _costController,
-            label: 'Cost (¥)',
-            hintText: '0',
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          ),
-          const SizedBox(height: 24),
+            // 3. 日時と滞在時間 (モダン一体型UI)
+            Row(
+              children: [
+                // 日時選択 (一体型コンテナ)
+                Expanded(
+                  flex: 5,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Date & Time', style: AppTextStyles.label),
+                      const SizedBox(height: 8),
+                      Container(
+                        height: 56, // テキストフィールドと同じ高さに合わせる
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          children: [
+                            // 日付エリア
+                            Expanded(
+                              flex: 3,
+                              child: GestureDetector(
+                                onTap: _pickDate,
+                                behavior: HitTestBehavior.opaque,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Text(
+                                        DateFormat('MM/dd (E)').format(_selectedDate),
+                                        style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            
+                            // 区切り線
+                            Container(
+                              width: 1,
+                              height: 32,
+                              color: Colors.grey.shade300,
+                            ),
 
-          // 5. 画像URL (共通部品使用)
-          TrippleTextField(
-            controller: _imageController,
-            label: 'Image URL (Optional)',
-            hintText: 'https://...',
-          ),
-          const SizedBox(height: 24),
+                            // 時間エリア
+                            Expanded(
+                              flex: 2,
+                              child: GestureDetector(
+                                onTap: _pickTimeCupertino,
+                                behavior: HitTestBehavior.opaque,
+                                child: Center(
+                                  child: Text(
+                                    '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}',
+                                    style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(width: 12),
+                
+                // 滞在時間 (共通部品使用)
+                Expanded(
+                  flex: 2,
+                  child: TrippleTextField(
+                    controller: _durationController,
+                    label: 'Min',
+                    hintText: '60',
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: (_) => setState((){}),
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 4),
+              child: Text(
+                'Ends at: ${_calculateEndTime()}',
+                style: AppTextStyles.label.copyWith(color: AppColors.textSecondary),
+              ),
+            ),
+            const SizedBox(height: 24),
 
-          // 6. メモ (共通部品使用)
-          TrippleTextField(
-            controller: _notesController,
-            label: 'Notes',
-            hintText: 'Reservation details, memo...',
-            maxLines: 3,
-          ),
-        ],
+            // 4. 費用 (共通部品使用)
+            TrippleTextField(
+              controller: _costController,
+              label: 'Cost (¥)',
+              hintText: '0',
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            ),
+            const SizedBox(height: 24),
+
+            // 5. 画像URL (共通部品使用)
+            TrippleTextField(
+              controller: _imageController,
+              label: 'Image URL (Optional)',
+              hintText: 'https://...',
+            ),
+            const SizedBox(height: 24),
+
+            // 6. メモ (共通部品使用)
+            TrippleTextField(
+              controller: _notesController,
+              label: 'Notes',
+              hintText: 'Reservation details, memo...',
+              maxLines: 3,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -431,7 +434,7 @@ class _ScheduleEditModalState extends State<ScheduleEditModal> {
   }
 
   void _saveItem() {
-    if (_formKey.currentState!.validate()) {
+    if (_formKey.currentState?.validate() ?? false) {
       final startDateTime = DateTime(
         _selectedDate.year, _selectedDate.month, _selectedDate.day,
         _selectedTime.hour, _selectedTime.minute,
