@@ -1,6 +1,4 @@
-// lib/features/settings/presentation/screens/settings_screen.dart
-
-import 'package:flutter/cupertino.dart'; // 👈 追加
+import 'package:flutter/cupertino.dart'; 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,6 +12,8 @@ import 'package:new_tripple/features/settings/presentation/screens/legal_screen.
 import 'package:new_tripple/features/settings/presentation/screens/profile_edit_modal.dart';
 import 'package:new_tripple/features/auth/data/auth_repository.dart';
 import 'package:new_tripple/shared/widgets/custom_header.dart';
+import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
+import 'package:new_tripple/core/constants/modal_constants.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -280,21 +280,20 @@ class SettingsScreen extends StatelessWidget {
 
   // --- Helpers (他は変更なし) ---
 
+  // 👇 修正: 言語選択モーダル
   void _showLanguageSelector(BuildContext context) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+      isScrollControlled: true, // これがないと高さ制限がかかることがあるので念のため
+      builder: (context) => TrippleModalScaffold(
+        title: 'Select Language',
+        icon: Icons.language_rounded,
+        heightRatio: TrippleModalSize.compactRatio, // 小さめでOK
+        isScrollable: true, // コンテンツに合わせて縮む
+
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(height: 16),
-            Text('Select Language', style: AppTextStyles.h3),
-            const SizedBox(height: 16),
             ListTile(
               title: const Text('日本語'),
               leading: const Text('🇯🇵', style: TextStyle(fontSize: 24)),
@@ -303,6 +302,7 @@ class SettingsScreen extends StatelessWidget {
                 Navigator.pop(context);
               },
             ),
+            const Divider(height: 1),
             ListTile(
               title: const Text('English'),
               leading: const Text('🇺🇸', style: TextStyle(fontSize: 24)),
@@ -311,34 +311,35 @@ class SettingsScreen extends StatelessWidget {
                 Navigator.pop(context);
               },
             ),
-            const SizedBox(height: 40),
           ],
         ),
       ),
     );
   }
 
+  // 👇 修正: 通貨選択モーダル
   void _showCurrencySelector(BuildContext context) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+      isScrollControlled: true,
+      builder: (context) => TrippleModalScaffold(
+        title: 'Select Currency',
+        icon: Icons.currency_exchange_rounded,
+        heightRatio: TrippleModalSize.mediumRatio, // 項目多めなのでMedium
+        isScrollable: true, // これも縮んでOK
+
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(height: 16),
-            Text('Select Currency', style: AppTextStyles.h3),
-            const SizedBox(height: 16),
             _buildCurrencyItem(context, AppCurrency.jpy, 'JPY (¥)', '🇯🇵'),
+            const Divider(height: 1),
             _buildCurrencyItem(context, AppCurrency.usd, 'USD (\$)', '🇺🇸'),
+            const Divider(height: 1),
             _buildCurrencyItem(context, AppCurrency.eur, 'EUR (€)', '🇪🇺'),
+            const Divider(height: 1),
             _buildCurrencyItem(context, AppCurrency.krw, 'KRW (₩)', '🇰🇷'),
+            const Divider(height: 1),
             _buildCurrencyItem(context, AppCurrency.cny, 'CNY (元)', '🇨🇳'),
-            const SizedBox(height: 40),
           ],
         ),
       ),

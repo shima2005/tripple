@@ -14,6 +14,7 @@ import 'package:new_tripple/services/gemini_service.dart';
 import 'package:new_tripple/services/geocoding_service.dart';
 import 'package:new_tripple/shared/widgets/common_inputs.dart';
 import 'package:new_tripple/features/trip/presentation/screens/place_search_modeal.dart';
+import 'package:new_tripple/shared/widgets/tripple_empty_state.dart';
 import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
 import 'package:new_tripple/core/constants/modal_constants.dart';
 
@@ -324,10 +325,14 @@ class _AITripPlanModalState extends State<AITripPlanModal> {
 
         Expanded(
           child: _mustVisitItems.isEmpty
-              ? Center(child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [Icon(Icons.auto_awesome_mosaic_rounded, size: 48, color: Colors.grey[300]), const SizedBox(height: 12), Text('AI will suggest everything!', style: TextStyle(color: Colors.grey[400]))]
-                ))
+              ? Center(
+                child: TrippleEmptyState(
+                  title: 'No Must-Visit Places',
+                  message: 'Add places you absolutely want to go, or let AI suggest everything!',
+                  icon: Icons.auto_awesome_mosaic_rounded,
+                  accentColor: AppColors.primary,
+                ),
+              )
               : ListView.separated(
                   itemCount: _mustVisitItems.length,
                   separatorBuilder: (c, i) => const SizedBox(height: 8),

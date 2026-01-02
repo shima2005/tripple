@@ -22,8 +22,6 @@ class ShareTripModal extends StatefulWidget {
 }
 
 class _ShareTripModalState extends State<ShareTripModal> {
-  final TextEditingController _searchController = TextEditingController();
-  bool _isSearching = false;
   List<UserProfile>? _friends;
 
   @override
@@ -210,7 +208,6 @@ class _ShareTripModalState extends State<ShareTripModal> {
 
   // ... (招待ロジックは変更なし)
   Future<void> _inviteUser(UserProfile user) async {
-    setState(() => _isSearching = true);
     try {
       final myUid = FirebaseAuth.instance.currentUser!.uid;
       final repo = context.read<UserRepository>();
@@ -229,34 +226,6 @@ class _ShareTripModalState extends State<ShareTripModal> {
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      if (mounted) setState(() => _isSearching = false);
-    }
-  }
-
-  Future<void> _searchAndInvite() async {
-    final customId = _searchController.text.trim();
-    if (customId.isEmpty) return;
-
-    setState(() => _isSearching = true);
-    FocusScope.of(context).unfocus(); 
-
-    try {
-      final userRepo = context.read<UserRepository>();
-      final user = await userRepo.searchUserByCustomId(customId);
-
-      if (user == null) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User not found')));
-        return;
-      }
-      if (widget.trip.memberIds?.contains(user.uid) ?? false) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Already a member')));
-        return;
-      }
-      await _inviteUser(user);
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-    } finally {
-      if (mounted) setState(() => _isSearching = false);
     }
   }
 }

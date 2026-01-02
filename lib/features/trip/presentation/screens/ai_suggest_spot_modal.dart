@@ -7,6 +7,7 @@ import 'package:new_tripple/models/schedule_item.dart';
 import 'package:new_tripple/models/trip.dart';
 import 'package:new_tripple/shared/widgets/common_inputs.dart';
 import 'package:new_tripple/models/enums.dart';
+import 'package:new_tripple/shared/widgets/tripple_empty_state.dart';
 import 'package:url_launcher/url_launcher.dart';
 // 👇 TrippleModalScaffold
 import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
@@ -132,7 +133,17 @@ class _AISuggestSpotModalState extends State<AISuggestSpotModal> {
         const SizedBox(height: 16),
         
         Expanded(
-          child: ListView.separated(
+          child: _suggestions!.isEmpty 
+            // 👇 追加: 万が一結果が空だった場合
+            ? const Center(
+                child: TrippleEmptyState(
+                  title: 'No Suggestions Found',
+                  message: 'Try changing your request or criteria.',
+                  icon: Icons.search_off_rounded,
+                  accentColor: AppColors.third,
+                ),
+              )
+          : ListView.separated(
             itemCount: _suggestions!.length,
             separatorBuilder: (c, i) => const SizedBox(height: 16),
             itemBuilder: (context, index) {

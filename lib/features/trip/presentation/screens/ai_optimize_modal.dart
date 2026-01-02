@@ -6,6 +6,7 @@ import 'package:new_tripple/core/theme/app_text_styles.dart';
 import 'package:new_tripple/features/trip/domain/trip_cubit.dart';
 import 'package:new_tripple/models/schedule_item.dart';
 import 'package:new_tripple/models/trip.dart';
+import 'package:new_tripple/shared/widgets/tripple_empty_state.dart';
 import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
 import 'package:new_tripple/core/constants/modal_constants.dart';
 
@@ -138,7 +139,14 @@ class _AIOptimizeModalState extends State<AIOptimizeModal> {
         const SizedBox(height: 8),
         Expanded(
           child: currentDayItems.isEmpty
-              ? Center(child: Text('No plans for this day yet.\nAI can suggest spots!', style: TextStyle(color: Colors.grey[400]), textAlign: TextAlign.center))
+              ? Center(
+                  child: TrippleEmptyState(
+                    title: 'No Plans Yet',
+                    message: 'This day is empty. Use "Suggest & Fill" to ask AI for spots!',
+                    icon: Icons.calendar_today_rounded,
+                    accentColor: Colors.grey,
+                  ),
+                )
               : Container(
                   decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)),
                   child: ListView.separated(

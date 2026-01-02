@@ -12,6 +12,7 @@ import 'package:new_tripple/features/trip/presentation/screens/place_search_mode
 import 'package:new_tripple/services/geocoding_service.dart';
 import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
 import 'package:new_tripple/shared/widgets/tripple_toast.dart';
+import 'package:new_tripple/shared/widgets/tripple_empty_state.dart';
 
 class PastTripLogModal extends StatefulWidget {
   const PastTripLogModal({super.key});
@@ -103,7 +104,15 @@ class _PastTripLogModalState extends State<PastTripLogModal> {
               pastTrips.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
               if (pastTrips.isEmpty) {
-                return Center(child: Text('No history yet.', style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey)));
+                // 👇 修正: TrippleEmptyStateを使用
+                return const Center(
+                  child: TrippleEmptyState(
+                    title: 'No Travel History',
+                    message: 'Log your past adventures here to build your travel map!',
+                    icon: Icons.history_edu_rounded,
+                    accentColor: Colors.grey,
+                  ),
+                );
               }
 
               return ListView.separated(
