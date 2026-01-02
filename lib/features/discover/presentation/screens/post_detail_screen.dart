@@ -6,12 +6,15 @@ import 'package:intl/intl.dart';
 import 'package:new_tripple/core/theme/app_colors.dart';
 import 'package:new_tripple/core/theme/app_text_styles.dart';
 import 'package:new_tripple/features/discover/domain/discover_cubit.dart';
+import 'package:new_tripple/features/discover/presentation/screens/read_only_timeline_view.dart';
 import 'package:new_tripple/features/user/presentation/screens/user_profile_screen.dart';
 import 'package:new_tripple/models/post.dart';
 import 'package:new_tripple/features/user/data/user_repository.dart';
 import 'package:new_tripple/models/user_profile.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:new_tripple/shared/widgets/tripple_toast.dart';
+import 'package:share_plus/share_plus.dart';
+
 class PostDetailScreen extends StatefulWidget { // 👈 状態を持つのでStatefulに変更
   final Post post;
   const PostDetailScreen({super.key, required this.post});
@@ -28,6 +31,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   void initState() {
     super.initState();
     _checkFollowStatus();
+  }
+
+  // 👇 追加: シェア処理メソッド
+  void _handleShare() {
+    final post = widget.post;
+    final String text = '''
+Check out this trip on Tripple! ✈️
+
+${post.title}
+by User ID: ${post.authorId}
+
+-------------------
+${post.content.length > 100 ? "${post.content.substring(0, 100)}..." : post.content}
+''';
+
+    // シェアシートを表示
+    Share.share(text, subject: post.title);
   }
 
   // 初期状態のチェック
@@ -251,12 +271,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             width: double.infinity,
                             child: FilledButton(
                               onPressed: () {
-                                // TODO: Trip詳細へ遷移
-                                // context.read<TripCubit>().selectTrip(post.tripId);
-                                // 上記だとMainScreenの状態が変わってしまうので、
-                                // 単独でTripを表示する画面に飛ばすか、一時的にselectTripしてDetailViewを表示するのが良い
-                                // 今回は簡易的にSnackBar
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tap to view trip details (ToDo)')));
+                                // 👇 ReadOnlyTimelineScreen へ遷移！
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ReadOnlyTimelineScreen(
+                                      tripId: post.tripId,
+                                      tripTitle: post.tripTitle,
+                                    ),
+                                  ),
+                                );
                               },
                               style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
                               child: const Text('View Full Plan'),
@@ -301,12 +325,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         },
                       ),
 
-                      //TODO Share Button (機能未実装なのでそのまま)
                       _ActionButton(
                         icon: Icons.share_rounded,
                         color: Colors.grey,
                         label: 'Share',
-                        onTap: () {},
+                        onTap: _handleShare,
                       ),
                     ],
                   ),

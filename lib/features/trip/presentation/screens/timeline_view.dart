@@ -399,8 +399,12 @@ class _TimelineViewState extends State<TimelineView> {
                                   shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
                                 ),
                                 onPressed: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(builder: (context) => ExpenseStatsScreen(trip: currentTrip))
+                                  // 👇 修正: Modalとして表示！
+                                  showModalBottomSheet(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    backgroundColor: Colors.transparent,
+                                    builder: (context) => ExpenseStatsModal(trip: currentTrip), // 名前が変わったWidgetを使う
                                   );
                                 },
                               ),

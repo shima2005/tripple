@@ -12,6 +12,7 @@ import 'package:new_tripple/services/routing_service.dart';
 class TimelineItemWidget extends StatelessWidget {
   final Object item;
   final bool isLast;
+  final bool isReadOnly;
   final Function(Object)? onTap;
   final Function(ScheduledItem)? onMapTap;
 
@@ -21,6 +22,7 @@ class TimelineItemWidget extends StatelessWidget {
     this.isLast = false,
     this.onTap,
     this.onMapTap,
+    this.isReadOnly = false,
   });
 
   @override
@@ -28,12 +30,14 @@ class TimelineItemWidget extends StatelessWidget {
     if (item is ScheduledItem) {
       return _ScheduledRow(
         item: item as ScheduledItem,
+        isReadOnly: isReadOnly,
         isLast: isLast,
         onTap: () => onTap?.call(item), 
         onMapTap: () => onMapTap?.call(item as ScheduledItem),
       );
     } else if (item is RouteItem) {
       return _RouteRow(
+        isReadOnly: isReadOnly,
         item: item as RouteItem,
         onEdit: () => onTap?.call(item), 
       );
@@ -51,6 +55,7 @@ class _TimelineLayoutHelper extends StatelessWidget {
   final Widget content;
   final bool isLast;
   final bool isRoute;
+  final bool isReadOnly;
 
   const _TimelineLayoutHelper({
     required this.timeText,
@@ -58,6 +63,7 @@ class _TimelineLayoutHelper extends StatelessWidget {
     required this.content,
     this.isLast = false,
     this.isRoute = false,
+    required this.isReadOnly,
   });
 
   @override
@@ -132,8 +138,9 @@ class _ScheduledRow extends StatelessWidget {
   final bool isLast;
   final VoidCallback? onTap;
   final VoidCallback? onMapTap;
+  final bool isReadOnly;
 
-  const _ScheduledRow({required this.item, required this.isLast, this.onTap, required this.onMapTap});
+  const _ScheduledRow({required this.item, required this.isLast, this.onTap, required this.onMapTap, required this.isReadOnly,});
 
   @override
   Widget build(BuildContext context) {
@@ -148,6 +155,7 @@ class _ScheduledRow extends StatelessWidget {
 
     return _TimelineLayoutHelper(
       isLast: isLast,
+      isReadOnly: isReadOnly,
       timeText: startTime,
       centerNode: Container(
         width: 24,
@@ -167,7 +175,7 @@ class _ScheduledRow extends StatelessWidget {
         ),
       ),
       content: GestureDetector(
-        onTap: onTap,
+        onTap: !isReadOnly ? onTap: null,
         child: _ScheduledCardContent(item: item, timeRange: timeRange, onMapTap: onMapTap,),
       ),
     );
@@ -350,8 +358,9 @@ class _ScheduledCardContent extends StatelessWidget {
 class _RouteRow extends StatefulWidget {
   final RouteItem item;
   final VoidCallback? onEdit;
+  final bool isReadOnly; 
   
-  const _RouteRow({required this.item, this.onEdit});
+  const _RouteRow({required this.item, this.onEdit, required this.isReadOnly,});
 
   @override
   State<_RouteRow> createState() => _RouteRowState();
@@ -391,6 +400,7 @@ class _RouteRowState extends State<_RouteRow> {
                       widget.item.endLongitude != null;
 
     return _TimelineLayoutHelper(
+      isReadOnly: widget.isReadOnly,
       isRoute: true,
       timeText: startTime,
       centerNode: Container(
@@ -485,7 +495,7 @@ class _RouteRowState extends State<_RouteRow> {
                       ],
 
                       // 編集ボタン
-                      _buildUnifiedIconButton(
+                      if(!widget.isReadOnly) _buildUnifiedIconButton(
                         onTap: widget.onEdit ?? () {},
                         child: const Icon(Icons.edit_rounded, size: 16, color: Colors.grey),
                       ),

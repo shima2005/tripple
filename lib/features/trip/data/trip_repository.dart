@@ -46,6 +46,15 @@ class TripRepository {
   // 2. データ操作メソッド
   // ----------------------------------------------------------------
 
+  Future<Trip?> getTripById(String tripId) async {
+    // _tripsRef は既に withConverter が適用されているので、
+    // get() すると DocumentSnapshot<Trip> が返ってきます。
+    final docSnap = await _tripsRef.doc(tripId).get();
+    
+    // データが存在すれば Trip オブジェクトを、なければ null を返します
+    return docSnap.data();
+  }
+
   /// ユーザーに関連するTrip一覧を取得
   Future<List<Trip>> fetchTrips(String userId) async {
     // memberIds配列にuserIdが含まれているか、またはownerIdがuserIdのものを検索
