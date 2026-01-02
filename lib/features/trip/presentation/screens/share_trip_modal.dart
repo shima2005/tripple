@@ -4,12 +4,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:new_tripple/core/theme/app_colors.dart';
 import 'package:new_tripple/core/theme/app_text_styles.dart';
-import 'package:new_tripple/features/user/data/user_repository.dart'; // UserRepo
+import 'package:new_tripple/features/user/data/user_repository.dart'; 
 import 'package:new_tripple/models/trip.dart';
-import 'package:new_tripple/shared/widgets/common_inputs.dart'; // TrippleTextField
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:new_tripple/models/user_profile.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
+import 'package:new_tripple/core/constants/modal_constants.dart';
 
 class ShareTripModal extends StatefulWidget {
   final Trip trip;
@@ -23,7 +24,6 @@ class ShareTripModal extends StatefulWidget {
 class _ShareTripModalState extends State<ShareTripModal> {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
-
   List<UserProfile>? _friends;
 
   @override
@@ -33,11 +33,12 @@ class _ShareTripModalState extends State<ShareTripModal> {
   }
   
   Future<void> _loadFriends() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-    final repo = context.read<UserRepository>();
-    final myProfile = await repo.getUserProfile(uid);
-    if (myProfile != null && myProfile.friendIds.isNotEmpty) {
-      final friends = await repo.getUsersByIds(myProfile.friendIds);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final userRepo = context.read<UserRepository>();
+    final profile = await userRepo.getUserProfile(uid);
+    if (profile != null && profile.friendIds.isNotEmpty) {
+      final friends = await userRepo.getUsersByIds(profile.friendIds);
       if (mounted) setState(() => _friends = friends);
     } else {
       if (mounted) setState(() => _friends = []);
@@ -46,167 +47,173 @@ class _ShareTripModalState extends State<ShareTripModal> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40, height: 4,
-                margin: const EdgeInsets.only(bottom: 24),
-                decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+    return TrippleModalScaffold(
+      title: 'Invite Members',
+      icon: Icons.person_add_rounded,
+      heightRatio: TrippleModalSize.mediumRatio,
+      
+      // TabBarを使うのでScaffold自体のスクロールはOFF
+      isScrollable: false,
+
+      child: DefaultTabController(
+        length: 2,
+        child: Column(
+          children: [
+            // TabBar
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
               ),
-
-              Text('Invite Friends', style: AppTextStyles.h2),
-              const SizedBox(height: 32),
-
-              // --- 1. QR Code ---
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 16, offset: Offset(0, 8))],
+              child: TabBar(
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicator: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
                 ),
-                child: QrImageView(
-                  data: widget.trip.id,
-                  version: QrVersions.auto,
-                  size: 180.0,
-                  foregroundColor: AppColors.primary,
-                ),
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.grey,
+                dividerColor: Colors.transparent,
+                tabs: const [
+                  Tab(text: 'Search ID'),
+                  Tab(text: 'QR Code'),
+                ],
               ),
-              const SizedBox(height: 32),
+            ),
+            const SizedBox(height: 24),
 
-              // --- 2. Copy Code ---
-              GestureDetector(
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: widget.trip.id));
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied! 📋')));
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(widget.trip.id, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, letterSpacing: 1.0)),
-                      const SizedBox(width: 12),
-                      const Icon(Icons.copy_rounded, color: AppColors.primary, size: 20),
-                    ],
-                  ),
-                ),
-              ),
-              
-              const SizedBox(height: 32),
-              
-              // 👇 Friends Section (優先表示)
-              if (_friends != null && _friends!.isNotEmpty) ...[
-                Align(alignment: Alignment.centerLeft, child: Text('Quick Invite Friends', style: AppTextStyles.h3)),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 90,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _friends!.length,
-                    separatorBuilder: (c, i) => const SizedBox(width: 16),
-                    itemBuilder: (context, index) {
-                      final friend = _friends![index];
-                      // すでにメンバーかチェック
-                      final isMember = widget.trip.memberIds?.contains(friend.uid) ?? false;
-
-                      return GestureDetector(
-                        onTap: isMember ? null : () => _inviteUser(friend), // タップで招待！
-                        child: Column(
-                          children: [
-                            Stack(
-                              children: [
-                                CircleAvatar(
-                                  radius: 28,
-                                  backgroundColor: Colors.grey[200],
-                                  backgroundImage: friend.photoUrl != null ? CachedNetworkImageProvider(friend.photoUrl!) : null,
-                                  child: friend.photoUrl == null ? const Icon(Icons.person, color: Colors.grey) : null,
-                                ),
-                                if (isMember)
-                                  Positioned(
-                                    right: 0, bottom: 0,
-                                    child: Container(
-                                      padding: const EdgeInsets.all(2),
-                                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                                      child: const Icon(Icons.check_circle, color: Colors.green, size: 16),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              friend.displayName,
-                              style: TextStyle(fontSize: 11, color: isMember ? Colors.grey : AppColors.textPrimary),
-                              maxLines: 1, overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                const Divider(),
-                const SizedBox(height: 16),
-              ],
-
-              // --- 3. Invite by ID (ここに追加！) ---
-              Align(alignment: Alignment.centerLeft, child: Text('Invite by User ID', style: AppTextStyles.h3)),
-              const SizedBox(height: 12),
-              
-              Row(
+            // TabBarView
+            Expanded(
+              child: TabBarView(
                 children: [
-                  Expanded(
-                    child: TrippleTextField(
-                      controller: _searchController,
-                      hintText: '@username',
-                      suffixIcon: const Icon(Icons.alternate_email_rounded, color: Colors.grey),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  IconButton.filled(
-                    onPressed: _isSearching ? null : _searchAndInvite,
-                    icon: _isSearching 
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Icon(Icons.send_rounded),
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppColors.accent,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.all(16),
+                  // 👇 修正1: 検索タブ自体をスクロール可能(CustomScrollView)にしたので、ここではそのまま配置
+                  _buildSearchTab(),
+
+                  // 修正2: QRタブは短いのでSingleChildScrollViewで包む
+                  Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: _buildQrTab(),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  // 招待ロジックを共通化
+  // --- 👇 Search Tab (CustomScrollViewで安全対策) ---
+  Widget _buildSearchTab() {
+    return CustomScrollView(
+      slivers: [
+        // 1. 固定部分 (検索バー + タイトル)
+        SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              
+              Text('Quick Invite Friends', style: AppTextStyles.label),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+
+        // 2. リスト部分 (読み込み中 / 空 / リスト)
+        if (_friends == null)
+          const SliverFillRemaining(
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_friends!.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false, // スクロールしない（中央寄せ）
+            child: Center(child: Text('No friends found.', style: TextStyle(color: Colors.grey[400]))),
+          )
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final friend = _friends![index];
+                final isAlreadyMember = widget.trip.memberIds?.contains(friend.uid) ?? false;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero, // Padding調整
+                  leading: CircleAvatar(
+                    backgroundImage: (friend.photoUrl != null) ? CachedNetworkImageProvider(friend.photoUrl!) : null,
+                    child: (friend.photoUrl == null) ? const Icon(Icons.person) : null,
+                  ),
+                  title: Text(friend.displayName),
+                  subtitle: Text('@${friend.customId}'),
+                  trailing: isAlreadyMember
+                      ? const Text('Joined', style: TextStyle(color: Colors.grey))
+                      : TextButton(
+                          onPressed: () => _inviteUser(friend),
+                          child: const Text('Invite'),
+                        ),
+                );
+              },
+              childCount: _friends!.length,
+            ),
+          ),
+          
+        // 下部の余白確保
+        const SliverToBoxAdapter(child: SizedBox(height: 24)),
+      ],
+    );
+  }
+
+  // --- QR Tab ---
+  Widget _buildQrTab() {
+    final inviteCode = widget.trip.id;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.grey.shade200),
+            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))],
+          ),
+          child: QrImageView(
+            data: inviteCode,
+            version: QrVersions.auto,
+            size: 200.0,
+            foregroundColor: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 24),
+        const Text(
+          'Let your friend scan this code',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Invite Code: $inviteCode',
+          style: const TextStyle(color: Colors.grey),
+        ),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: () {
+             Clipboard.setData(ClipboardData(text: inviteCode));
+             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied!')));
+          }, 
+          icon: const Icon(Icons.copy_rounded, size: 18),
+          label: const Text('Copy Code'),
+        ),
+      ],
+    );
+  }
+
+  // ... (招待ロジックは変更なし)
   Future<void> _inviteUser(UserProfile user) async {
-    // _searchAndInvite の中身とほぼ同じだが、引数でUserを受け取る
     setState(() => _isSearching = true);
     try {
       final myUid = FirebaseAuth.instance.currentUser!.uid;
-    
       final repo = context.read<UserRepository>();
-
       final myProfile = await repo.getUserProfile(myUid);
       final myName = myProfile?.displayName ?? 'Unknown';
 
@@ -231,16 +238,21 @@ class _ShareTripModalState extends State<ShareTripModal> {
     if (customId.isEmpty) return;
 
     setState(() => _isSearching = true);
-    FocusScope.of(context).unfocus(); // キーボード閉じる
+    FocusScope.of(context).unfocus(); 
 
     try {
       final userRepo = context.read<UserRepository>();
-      // 1. ユーザー検索
       final user = await userRepo.searchUserByCustomId(customId);
 
-      if (user != null){
-        _inviteUser(user);
+      if (user == null) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User not found')));
+        return;
       }
+      if (widget.trip.memberIds?.contains(user.uid) ?? false) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Already a member')));
+        return;
+      }
+      await _inviteUser(user);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {

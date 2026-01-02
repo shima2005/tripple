@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:new_tripple/core/constants/modal_constants.dart';
 import 'package:new_tripple/core/theme/app_colors.dart';
 import 'package:new_tripple/core/theme/app_text_styles.dart';
 import 'package:new_tripple/features/trip/domain/trip_cubit.dart';
@@ -10,9 +11,8 @@ import 'package:new_tripple/models/route_item.dart';
 import 'package:new_tripple/models/step_detail.dart';
 import 'package:new_tripple/services/gemini_service.dart';
 import 'package:new_tripple/shared/widgets/common_inputs.dart';
-import 'package:new_tripple/shared/widgets/scan_button.dart';
-import 'package:new_tripple/shared/widgets/modal_header.dart'; // 👈 追加
 import 'package:image_picker/image_picker.dart';
+import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
 
 class RouteEditModal extends StatefulWidget {
   final String tripId;
@@ -52,194 +52,163 @@ class _RouteEditModalState extends State<RouteEditModal> {
     final startTime = widget.route.time;
     final endTime = startTime.add(Duration(minutes: widget.route.durationMinutes));
     final timeStr = '${DateFormat('HH:mm').format(startTime)} - ${DateFormat('HH:mm').format(endTime)}';
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
-      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
+    // 👇 TrippleModalScaffoldへ移行
+    return TrippleModalScaffold(
+      title: 'Edit Route',
+      heightRatio: TrippleModalSize.highRatio, // 項目多いのでHigh
+      
+      // スキャン機能！
+      isScanning: _isScanning,
+      onScanImage: (img) => _handleScan(image: img),
+      onScanText: (txt) => _handleScan(text: txt),
+
+      // 保存
+      onSave: _saveRoute,
+      saveLabel: 'Save Route',
+
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. 共通ヘッダーを使用！
-          TrippleModalHeader(
-            title: 'Edit Route',
-            // icon: Icons.directions_train_rounded, // アイコンはあえて無くしてスッキリさせる
-            actions: [
-              if (_isScanning)
-                const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-              else
-                Transform.scale(
-                  scale: 0.9,
-                  child: ScanButton(
-                    onImagePicked: (img) => _handleScan(image: img),
-                    onTextPasted: (txt) => _handleScan(text: txt),
+          // 2. Time Info
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.access_time_rounded, color: AppColors.primary, size: 20),
+                    const SizedBox(width: 8),
+                    Text(timeStr, style: AppTextStyles.h3.copyWith(fontSize: 18)),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Text(
+                    '${widget.route.durationMinutes} min',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textSecondary),
                   ),
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // 3. Main Transport Method
+          Text('Main Transport', style: AppTextStyles.label),
+          const SizedBox(height: 12),
+          ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(
+              dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: TransportType.values.where((t) => t != TransportType.other).map((type) {
+                  return TrippleSelectionChip(
+                    label: type.displayName,
+                    icon: type.icon,
+                    isSelected: _mainTransportType == type,
+                    onTap: () => setState(() => _mainTransportType = type),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // 4. Cost
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TrippleTextField(
+                  controller: _costController,
+                  label: 'Total Cost (¥)',
+                  hintText: '0',
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                children: [
+                  Text('', style: AppTextStyles.label),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 56,
+                    child: ElevatedButton.icon(
+                      onPressed: _calculateTotalCost,
+                      icon: const Icon(Icons.calculate_outlined, size: 18),
+                      label: const Text('Sum'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.accent.withValues(alpha: 0.1),
+                        foregroundColor: AppColors.accent,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 24),
 
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 2. Time Info (デザインをスッキリ化)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppColors.background,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.access_time_rounded, color: AppColors.primary, size: 20),
-                            const SizedBox(width: 8),
-                            Text(timeStr, style: AppTextStyles.h3.copyWith(fontSize: 18)),
-                          ],
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade300),
-                          ),
-                          child: Text(
-                            '${widget.route.durationMinutes} min',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textSecondary),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // 3. Main Transport Method
-                  Text('Main Transport', style: AppTextStyles.label),
-                  const SizedBox(height: 12),
-                  ScrollConfiguration(
-                    behavior: ScrollConfiguration.of(context).copyWith(
-                      dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
-                    ),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      physics: const BouncingScrollPhysics(),
-                      child: Row(
-                        children: TransportType.values.where((t) => t != TransportType.other).map((type) {
-                          return TrippleSelectionChip(
-                            label: type.displayName,
-                            icon: type.icon,
-                            isSelected: _mainTransportType == type,
-                            onTap: () => setState(() => _mainTransportType = type),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // 4. Cost (横並びで高さを合わせる)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: TrippleTextField(
-                          controller: _costController,
-                          label: 'Total Cost (¥)',
-                          hintText: '0',
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // 計算ボタンをTextFieldの高さに合わせる
-                      Column(
-                        children: [
-                          Text('', style: AppTextStyles.label), // 高さ合わせ用のダミー
-                          const SizedBox(height: 8),
-                          SizedBox(
-                            height: 56,
-                            child: ElevatedButton.icon(
-                              onPressed: _calculateTotalCost,
-                              icon: const Icon(Icons.calculate_outlined, size: 18),
-                              label: const Text('Sum'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.accent.withValues(alpha: 0.1),
-                                foregroundColor: AppColors.accent,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // 5. Steps Editor
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Route Details (Steps)', style: AppTextStyles.label),
-                      TextButton.icon(
-                        onPressed: () => _openStepEditor(), 
-                        icon: const Icon(Icons.add_rounded, size: 16),
-                        label: const Text('Add Step'),
-                        style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  
-                  if (_steps.isEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      child: Center(child: Text('No details added yet.', style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey))),
-                    )
-                  else
-                    ReorderableListView(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      buildDefaultDragHandles: false,
-                      onReorder: (oldIndex, newIndex) {
-                        setState(() {
-                          if (oldIndex < newIndex) newIndex -= 1;
-                          final item = _steps.removeAt(oldIndex);
-                          _steps.insert(newIndex, item);
-                        });
-                      },
-                      children: [
-                        for (int i = 0; i < _steps.length; i++)
-                          _buildStepItem(i, _steps[i]),
-                      ],
-                    ),
-                  
-                  const SizedBox(height: 100),
-                ],
+          // 5. Steps Editor
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Route Details (Steps)', style: AppTextStyles.label),
+              TextButton.icon(
+                onPressed: () => _openStepEditor(), 
+                icon: const Icon(Icons.add_rounded, size: 16),
+                label: const Text('Add Step'),
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
               ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          
+          if (_steps.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Center(child: Text('No details added yet.', style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey))),
+            )
+          else
+            ReorderableListView(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              onReorder: (oldIndex, newIndex) {
+                setState(() {
+                  if (oldIndex < newIndex) newIndex -= 1;
+                  final item = _steps.removeAt(oldIndex);
+                  _steps.insert(newIndex, item);
+                });
+              },
+              children: [
+                for (int i = 0; i < _steps.length; i++)
+                  _buildStepItem(i, _steps[i]),
+              ],
             ),
-          ),
-
-          // Save Button (共通部品)
-          TripplePrimaryButton(
-            text: 'Save Route',
-            onPressed: _saveRoute,
-          ),
         ],
       ),
     );
@@ -456,111 +425,94 @@ class _StepEditorSheetState extends State<_StepEditorSheet> {
     _costController = TextEditingController(text: widget.initialStep?.cost?.toInt().toString() ?? '');
   }
 
-  @override
+ @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    // 内部変数計算
     final isWalk = _selectedType == TransportType.walk || _selectedType == TransportType.bicycle;
     final isPublic = _selectedType == TransportType.train || _selectedType == TransportType.bus || _selectedType == TransportType.subway || _selectedType == TransportType.shinkansen || _selectedType == TransportType.plane;
     final duration = int.tryParse(_durationController.text) ?? 0;
     final endTime = widget.startTime.add(Duration(minutes: duration));
     final timeRangeStr = '${DateFormat('HH:mm').format(widget.startTime)} - ${DateFormat('HH:mm').format(endTime)}';
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
-      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+    // 👇 TrippleModalScaffoldへ移行 (StepはMediumサイズでOK)
+    return TrippleModalScaffold(
+      title: widget.initialStep == null ? 'Add Step' : 'Edit Step',
+      heightRatio: TrippleModalSize.mediumRatio,
+      
+      onSave: () {
+        final newStep = StepDetail(
+          transportType: _selectedType,
+          departureStation: _depController.text.isNotEmpty ? _depController.text : null,
+          arrivalStation: _arrController.text.isNotEmpty ? _arrController.text : null,
+          lineName: _lineController.text.isNotEmpty ? _lineController.text : null,
+          bookingDetails: _detailController.text.isNotEmpty ? _detailController.text : null,
+          durationMinutes: int.tryParse(_durationController.text) ?? 0,
+          cost: double.tryParse(_costController.text),
+          departureTime: widget.startTime,
+        );
+        widget.onSave(newStep);
+        Navigator.pop(context);
+      },
+      saveLabel: widget.initialStep == null ? 'Add Step' : 'Update Step',
+
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 👇 ここでも共通ヘッダー使用！
-          TrippleModalHeader(
-            title: widget.initialStep == null ? 'Add Step' : 'Edit Step',
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.access_time_filled_rounded, size: 16, color: AppColors.accent),
+                const SizedBox(width: 8),
+                Text(timeRangeStr, style: AppTextStyles.label.copyWith(color: AppColors.accent, fontWeight: FontWeight.bold, fontSize: 14)),
+              ],
+            ),
           ),
           const SizedBox(height: 24),
-          
-          Expanded(
+          Text('Method', style: AppTextStyles.label),
+          const SizedBox(height: 12),
+          ScrollConfiguration(
+            behavior: ScrollConfiguration.of(context).copyWith(dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse}),
             child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.access_time_filled_rounded, size: 16, color: AppColors.accent),
-                        const SizedBox(width: 8),
-                        Text(timeRangeStr, style: AppTextStyles.label.copyWith(color: AppColors.accent, fontWeight: FontWeight.bold, fontSize: 14)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text('Method', style: AppTextStyles.label),
-                  const SizedBox(height: 12),
-                  ScrollConfiguration(
-                    behavior: ScrollConfiguration.of(context).copyWith(dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse}),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      physics: const BouncingScrollPhysics(),
-                      child: Row(
-                        children: TransportType.values.where((t) => t != TransportType.other).map((type) {
-                          return TrippleSelectionChip(
-                            label: type.displayName,
-                            icon: type.icon,
-                            isSelected: _selectedType == type,
-                            onTap: () => setState(() => _selectedType = type),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      if (!isWalk) ...[
-                        Expanded(child: TrippleTextField(controller: _depController, label: 'From', hintText: 'Station')),
-                        const SizedBox(width: 16),
-                      ],
-                      Expanded(child: TrippleTextField(controller: _arrController, label: 'To', hintText: 'Destination')),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  if (isPublic) ...[
-                    TrippleTextField(controller: _lineController, label: 'Details', hintText: 'Line Name'),
-                    const SizedBox(height: 12),
-                    TrippleTextField(controller: _detailController, hintText: 'Booking', label: null),
-                    const SizedBox(height: 24),
-                  ],
-                  // 👇 コストと時間を横並びにしてスッキリ
-                  Row(
-                    children: [
-                      Expanded(child: TrippleTextField(controller: _costController, label: 'Cost (¥)', hintText: '0', keyboardType: TextInputType.number)),
-                      const SizedBox(width: 16),
-                      Expanded(child: TrippleTextField(controller: _durationController, label: 'Min', hintText: '10', keyboardType: TextInputType.number, onChanged: (_) => setState((){}))),
-                    ],
-                  ),
-                  const SizedBox(height: 100),
-                ],
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: TransportType.values.where((t) => t != TransportType.other).map((type) {
+                  return TrippleSelectionChip(
+                    label: type.displayName,
+                    icon: type.icon,
+                    isSelected: _selectedType == type,
+                    onTap: () => setState(() => _selectedType = type),
+                  );
+                }).toList(),
               ),
             ),
           ),
-          TripplePrimaryButton(
-            text: widget.initialStep == null ? 'Add Step' : 'Update Step',
-            onPressed: () {
-              final newStep = StepDetail(
-                transportType: _selectedType,
-                departureStation: _depController.text.isNotEmpty ? _depController.text : null,
-                arrivalStation: _arrController.text.isNotEmpty ? _arrController.text : null,
-                lineName: _lineController.text.isNotEmpty ? _lineController.text : null,
-                bookingDetails: _detailController.text.isNotEmpty ? _detailController.text : null,
-                durationMinutes: int.tryParse(_durationController.text) ?? 0,
-                cost: double.tryParse(_costController.text),
-                departureTime: widget.startTime,
-              );
-              widget.onSave(newStep);
-              Navigator.pop(context);
-            },
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              if (!isWalk) ...[
+                Expanded(child: TrippleTextField(controller: _depController, label: 'From', hintText: 'Station')),
+                const SizedBox(width: 16),
+              ],
+              Expanded(child: TrippleTextField(controller: _arrController, label: 'To', hintText: 'Destination')),
+            ],
+          ),
+          const SizedBox(height: 24),
+          if (isPublic) ...[
+            TrippleTextField(controller: _lineController, label: 'Details', hintText: 'Line Name'),
+            const SizedBox(height: 12),
+            TrippleTextField(controller: _detailController, hintText: 'Booking', label: null),
+            const SizedBox(height: 24),
+          ],
+          Row(
+            children: [
+              Expanded(child: TrippleTextField(controller: _costController, label: 'Cost (¥)', hintText: '0', keyboardType: TextInputType.number)),
+              const SizedBox(width: 16),
+              Expanded(child: TrippleTextField(controller: _durationController, label: 'Min', hintText: '10', keyboardType: TextInputType.number, onChanged: (_) => setState((){}))),
+            ],
           ),
         ],
       ),

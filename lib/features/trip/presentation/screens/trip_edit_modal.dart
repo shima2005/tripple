@@ -1,8 +1,8 @@
 import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:new_tripple/core/constants/modal_constants.dart';
 import 'package:new_tripple/core/theme/app_colors.dart';
 import 'package:new_tripple/core/theme/app_text_styles.dart';
 import 'package:new_tripple/features/trip/domain/trip_cubit.dart';
@@ -16,7 +16,7 @@ import 'package:new_tripple/features/trip/presentation/screens/place_search_mode
 import 'package:new_tripple/services/geocoding_service.dart';
 import 'package:new_tripple/services/storage_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:new_tripple/shared/widgets/modal_header.dart';
+import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
 
 class TripEditModal extends StatefulWidget {
   final Trip? trip;
@@ -73,237 +73,223 @@ class _TripEditModalState extends State<TripEditModal> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    // 👇 TrippleModalScaffoldでラップ！
+    return TrippleModalScaffold(
+      // タイトル・アイコン設定
+      title: _isEditing ? 'Edit Trip' : 'New Trip',
+      icon: widget.trip == null ? Icons.luggage_rounded : Icons.edit_location_alt_rounded,
+      
+      // 高さ設定 (Medium)
+      heightRatio: TrippleModalSize.mediumRatio,
+      
+      // フッターアクション (保存・削除)
+      onSave: _saveTrip,
+      onDelete: _isEditing ? _onDeletePressed : null,
+      deleteLabel: 'Delete Trip',
+      isLoading: _isUploading, // 画像アップロード中は保存ボタンもローディング表示にするならこれ
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
+      // 中身 (スクロール対応はScaffoldが自動でやるのでColumnだけでOK)
       child: Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- ヘッダー ---
-            TrippleModalHeader(
-              icon:widget.trip == null ? Icons.luggage_rounded : Icons.edit_location_alt_rounded,
-              title: (_isEditing) ? 'Edit Trip' : 'New Trip',
+            // 1. タイトル
+            TrippleTextField(
+              controller: _titleController,
+              label: 'Trip Title',
+              hintText: 'Ex: Eurotrip 2025',
+              validator: (value) => value == null || value.isEmpty ? 'Please enter a title' : null,
             ),
+            const SizedBox(height: 24),
 
-            const SizedBox(height: 32),
-
-            Expanded(
+            // 2. Main Transport
+            Text('Main Transport', style: AppTextStyles.label),
+            const SizedBox(height: 12),
+            ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
+              ),
               child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                child: Row(
+                  children: TransportType.values.where((t) => t != TransportType.other).map((type) {
+                    return TrippleSelectionChip(
+                      label: type.displayName,
+                      icon: type.icon,
+                      isSelected: _mainTransportType == type,
+                      onTap: () => setState(() => _mainTransportType = type),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // 3. 行き先
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Destinations 📍', style: AppTextStyles.label),
+                TextButton.icon(
+                  onPressed: _addDestination, 
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: const Text('Add Place'),
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                ),
+              ],
+            ),
+            if (_destinations.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Text(
+                  'No destinations added yet.\nTap "Add Place" to search!',
+                  style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey, fontSize: 12),
+                  textAlign: TextAlign.center,
+                ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _destinations.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 8),
+                itemBuilder: (context, index) => _buildDestinationItem(index, _destinations[index]),
+              ),
+            const SizedBox(height: 24),
+
+            // 4. 日程
+            Text('Date Range', style: AppTextStyles.label),
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: _pickDateRange,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Row(
                   children: [
-                    // 1. タイトル
-                    TrippleTextField(
-                      controller: _titleController,
-                      label: 'Trip Title',
-                      hintText: 'Ex: Eurotrip 2025',
-                      validator: (value) => value == null || value.isEmpty ? 'Please enter a title' : null,
+                    const Icon(Icons.calendar_today_rounded, color: AppColors.primary),
+                    const SizedBox(width: 12),
+                    Text(
+                      _dateRange == null
+                          ? 'Select dates'
+                          : '${DateFormat('yyyy/MM/dd').format(_dateRange!.start)} - ${DateFormat('MM/dd').format(_dateRange!.end)}',
+                      style: _dateRange == null
+                          ? AppTextStyles.bodyMedium.copyWith(color: Colors.grey)
+                          : AppTextStyles.bodyLarge,
                     ),
-                    const SizedBox(height: 24),
-
-                    // Main Transport Method
-                    Text('Main Transport', style: AppTextStyles.label),
-                    const SizedBox(height: 12),
-                    ScrollConfiguration(
-                      behavior: ScrollConfiguration.of(context).copyWith(
-                        dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
-                      ),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        physics: const BouncingScrollPhysics(),
-                        child: Row(
-                          children: TransportType.values.where((t) => t != TransportType.other).map((type) {
-                            return TrippleSelectionChip(
-                              label: type.displayName,
-                              icon: type.icon,
-                              isSelected: _mainTransportType == type,
-                              onTap: () => setState(() => _mainTransportType = type),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24,),
-
-                    // 👇 2. 行き先 (Destinations) - 日数選択付きにアップグレード！
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Destinations 📍', style: AppTextStyles.label),
-                        TextButton.icon(
-                          onPressed: _addDestination, 
-                          icon: const Icon(Icons.add_rounded, size: 16),
-                          label: const Text('Add Place'),
-                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                        ),
-                      ],
-                    ),
-                    if (_destinations.isEmpty)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[50],
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        child: Text(
-                          'No destinations added yet.\nTap "Add Place" to search!',
-                          style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey, fontSize: 12),
-                          textAlign: TextAlign.center,
-                        ),
-                      )
-                    else
-                      ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _destinations.length,
-                        separatorBuilder: (context, index) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          // 👇 新しいUIビルダーを使用
-                          return _buildDestinationItem(index, _destinations[index]);
-                        },
-                      ),
-                    const SizedBox(height: 24),
-
-                    // 3. 日程選択
-                    Text('Date Range', style: AppTextStyles.label),
-                    const SizedBox(height: 8),
-                    GestureDetector(
-                      onTap: _pickDateRange,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                        decoration: BoxDecoration(
-                          color: AppColors.background,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.calendar_today_rounded, color: AppColors.primary),
-                            const SizedBox(width: 12),
-                            Text(
-                              _dateRange == null
-                                  ? 'Select dates'
-                                  : '${DateFormat('yyyy/MM/dd').format(_dateRange!.start)} - ${DateFormat('MM/dd').format(_dateRange!.end)}',
-                              style: _dateRange == null
-                                  ? AppTextStyles.bodyMedium.copyWith(color: Colors.grey)
-                                  : AppTextStyles.bodyLarge,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // 4. 画像URL
-                    Text('Cover Image', style: AppTextStyles.label),
-                    const SizedBox(height: 12),
-                    Center(
-                      child: GestureDetector(
-                        onTap: _pickImage,
-                        child: Container(
-                          width: double.infinity,
-                          height: 200,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[100],
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.grey.shade300),
-                            image: _imageController.text.isNotEmpty
-                                ? DecorationImage(
-                                    image: CachedNetworkImageProvider(_imageController.text),
-                                    fit: BoxFit.cover,
-                                  )
-                                : null,
-                          ),
-                          child: _isUploading
-                              ? const Center(child: CircularProgressIndicator())
-                              : _imageController.text.isEmpty
-                                  ? Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.add_photo_alternate_rounded, size: 48, color: Colors.grey[400]),
-                                        const SizedBox(height: 8),
-                                        Text('Tap to upload photo', style: TextStyle(color: Colors.grey[600])),
-                                      ],
-                                    )
-                                  : Align(
-                                      alignment: Alignment.topRight,
-                                      child: IconButton(
-                                        icon: const Icon(Icons.edit_rounded, color: Colors.white),
-                                        style: IconButton.styleFrom(backgroundColor: Colors.black38),
-                                        onPressed: _pickImage,
-                                      ),
-                                    ),
-                        ),
-                      ),
-                    ),
-
-                    // 5. Tags
-                    Text('Tags', style: AppTextStyles.label),
-                    const SizedBox(height: 8),
-                    if (_tags.isNotEmpty) ...[
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _tags.map((tag) => Chip(
-                          label: Text(tag, style: const TextStyle(fontSize: 12, color: AppColors.primary)),
-                          backgroundColor: AppColors.primary.withOpacity(0.1),
-                          deleteIcon: const Icon(Icons.close_rounded, size: 16, color: AppColors.primary),
-                          onDeleted: () => setState(() => _tags.remove(tag)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide.none),
-                        )).toList(),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    TrippleTextField(
-                      controller: _tagInputController,
-                      hintText: 'Add a tag...',
-                      suffixIcon: IconButton(
-                        icon: const Icon(Icons.add_circle_rounded, color: AppColors.primary),
-                        onPressed: _addTag,
-                      ),
-                      onSubmitted: (_) => _addTag(),
-                    ),
-                    
-                    if (_isEditing) ...[
-                      const SizedBox(height: 24),
-                      const Divider(),
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(color: Colors.orange[100], shape: BoxShape.circle),
-                          child: const Icon(Icons.backpack_rounded, color: Colors.orange),
-                        ),
-                        title: const Text('Packing List', style: TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('${widget.trip!.checklist.where((i) => i.isChecked).length} / ${widget.trip!.checklist.length} checked'),
-                        trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey),
-                        onTap: () {
-                          showModalBottomSheet(
-                            context: context,
-                            isScrollControlled: true,
-                            backgroundColor: Colors.transparent,
-                            builder: (context) => const ChecklistModal(),
-                          );
-                        },
-                      ),
-                      const Divider(),
-                    ],
                   ],
                 ),
               ),
             ),
+            const SizedBox(height: 24),
 
+            // 5. 画像
+            Text('Cover Image', style: AppTextStyles.label),
+            const SizedBox(height: 12),
+            Center(
+              child: GestureDetector(
+                onTap: _pickImage,
+                child: Container(
+                  width: double.infinity,
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey.shade300),
+                    image: _imageController.text.isNotEmpty
+                        ? DecorationImage(
+                            image: CachedNetworkImageProvider(_imageController.text),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                  ),
+                  child: _isUploading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _imageController.text.isEmpty
+                          ? Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.add_photo_alternate_rounded, size: 48, color: Colors.grey[400]),
+                                const SizedBox(height: 8),
+                                Text('Tap to upload photo', style: TextStyle(color: Colors.grey[600])),
+                              ],
+                            )
+                          : Align(
+                              alignment: Alignment.topRight,
+                              child: IconButton(
+                                icon: const Icon(Icons.edit_rounded, color: Colors.white),
+                                style: IconButton.styleFrom(backgroundColor: Colors.black38),
+                                onPressed: _pickImage,
+                              ),
+                            ),
+                ),
+              ),
+            ),
+
+            // 6. Tags
+            const SizedBox(height: 24),
+            Text('Tags', style: AppTextStyles.label),
+            const SizedBox(height: 8),
+            if (_tags.isNotEmpty) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _tags.map((tag) => Chip(
+                  label: Text(tag, style: const TextStyle(fontSize: 12, color: AppColors.primary)),
+                  backgroundColor: AppColors.primary.withOpacity(0.1),
+                  deleteIcon: const Icon(Icons.close_rounded, size: 16, color: AppColors.primary),
+                  onDeleted: () => setState(() => _tags.remove(tag)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide.none),
+                )).toList(),
+              ),
+              const SizedBox(height: 12),
+            ],
+            TrippleTextField(
+              controller: _tagInputController,
+              hintText: 'Add a tag...',
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.add_circle_rounded, color: AppColors.primary),
+                onPressed: _addTag,
+              ),
+              onSubmitted: (_) => _addTag(),
+            ),
+            
+            // 7. その他のアクション (招待など)
             if (_isEditing) ...[
+              const SizedBox(height: 24),
+              const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.orange[100], shape: BoxShape.circle),
+                  child: const Icon(Icons.backpack_rounded, color: Colors.orange),
+                ),
+                title: const Text('Packing List', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('${widget.trip!.checklist.where((i) => i.isChecked).length} / ${widget.trip!.checklist.length} checked'),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.grey),
+                onTap: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => const ChecklistModal(),
+                  );
+                },
+              ),
+              const Divider(),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -325,25 +311,6 @@ class _TripEditModalState extends State<TripEditModal> {
                 ),
               ),
             ],
-
-            if (_isEditing) ...[
-              Center(
-                child: TextButton.icon(
-                  onPressed: _onDeletePressed,
-                  icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
-                  label: Text(
-                    'Delete Trip',
-                    style: AppTextStyles.bodyMedium.copyWith(color: AppColors.error),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            TripplePrimaryButton(
-              text: 'Save Trip',
-              onPressed: _saveTrip,
-            ),
           ],
         ),
       ),

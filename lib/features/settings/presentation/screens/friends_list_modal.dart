@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:new_tripple/core/theme/app_colors.dart';
-import 'package:new_tripple/core/theme/app_text_styles.dart';
 import 'package:new_tripple/features/user/data/user_repository.dart';
 import 'package:new_tripple/models/user_profile.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:new_tripple/shared/widgets/common_inputs.dart';
 import 'package:new_tripple/shared/widgets/tripple_empty_state.dart';
+import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
+import 'package:new_tripple/core/constants/modal_constants.dart';
 
 class FriendsListModal extends StatefulWidget {
   const FriendsListModal({super.key});
@@ -22,84 +23,75 @@ class _FriendsListModalState extends State<FriendsListModal> {
     final uid = FirebaseAuth.instance.currentUser!.uid;
     final repo = context.read<UserRepository>();
 
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
-      height: MediaQuery.of(context).size.height * 0.8,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Friends', style: AppTextStyles.h2),
-              // 👇 追加ボタン
-              IconButton.filled(
-                onPressed: () => _showAddFriendDialog(context),
-                icon: const Icon(Icons.person_add_rounded),
-                style: IconButton.styleFrom(backgroundColor: AppColors.primary),
+    return TrippleModalScaffold(
+      title: 'Friends',
+      icon: Icons.group_rounded,
+      heightRatio: TrippleModalSize.mediumRatio,
+      
+      isScrollable: false, // Scaffold側でExpandedしてくれる
+
+      extraHeaderActions: [
+        IconButton(
+          onPressed: () => _showAddFriendDialog(context),
+          icon: const Icon(Icons.person_add_rounded, color: AppColors.primary),
+          style: IconButton.styleFrom(
+            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+          ),
+        ),
+      ],
+
+      // 👇 修正: ここにあった Expanded を削除！ FutureBuilderを直接渡す
+      child: FutureBuilder<UserProfile?>(
+        future: repo.getUserProfile(uid),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          final myProfile = snapshot.data!;
+          final friendIds = myProfile.friendIds;
+
+          if (friendIds.isEmpty) {
+            return const Center(
+              child: TrippleEmptyState(
+                title: 'Find Travel Buddies',
+                message: 'Tap the "+" button above to add friends by their ID and plan trips together!',
+                icon: Icons.group_add_rounded,
+                accentColor: AppColors.primary,
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          
-          Expanded(
-            child: FutureBuilder<UserProfile?>(
-              future: repo.getUserProfile(uid),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                final myProfile = snapshot.data!;
-                final friendIds = myProfile.friendIds;
+            );
+          }
 
-                if (friendIds.isEmpty) {
-                  // 👇 ここを差し替え
-                  return const TrippleEmptyState(
-                    title: 'Find Travel Buddies',
-                    message: 'Tap the "+" button above to add friends by their ID and plan trips together!',
-                    icon: Icons.group_add_rounded, // or Icons.diversity_3_rounded
-                    accentColor: AppColors.primary,
+          return FutureBuilder<List<UserProfile>>(
+            future: repo.getUsersByIds(friendIds),
+            builder: (context, friendsSnap) {
+              if (!friendsSnap.hasData) return const Center(child: CircularProgressIndicator());
+              final friends = friendsSnap.data!;
+
+              return ListView.separated(
+                itemCount: friends.length,
+                separatorBuilder: (c, i) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final friend = friends[index];
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.grey[200],
+                      backgroundImage: friend.photoUrl != null ? CachedNetworkImageProvider(friend.photoUrl!) : null,
+                      child: friend.photoUrl == null ? const Icon(Icons.person, color: Colors.grey) : null,
+                    ),
+                    title: Text(friend.displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('@${friend.customId}'),
                   );
-                }
-
-                // 👇 一括取得メソッドを使用
-                return FutureBuilder<List<UserProfile>>(
-                  future: repo.getUsersByIds(friendIds),
-                  builder: (context, friendsSnap) {
-                    if (!friendsSnap.hasData) return const Center(child: CircularProgressIndicator());
-                    final friends = friendsSnap.data!;
-
-                    return ListView.separated(
-                      itemCount: friends.length,
-                      separatorBuilder: (c, i) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final friend = friends[index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: CircleAvatar(
-                            backgroundColor: Colors.grey[200],
-                            backgroundImage: friend.photoUrl != null ? CachedNetworkImageProvider(friend.photoUrl!) : null,
-                            child: friend.photoUrl == null ? const Icon(Icons.person, color: Colors.grey) : null,
-                          ),
-                          title: Text(friend.displayName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('@${friend.customId}'),
-                        );
-                      },
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+                },
+              );
+            },
+          );
+        },
       ),
     );
   }
 
-  // 👇 フレンド追加ダイアログ
- void _showAddFriendDialog(BuildContext context) {
+  // ... (Dialog部分は変更なし)
+  void _showAddFriendDialog(BuildContext context) {
+    // ... (省略) ...
     final controller = TextEditingController();
     bool isLoading = false;
 
@@ -107,8 +99,8 @@ class _FriendsListModalState extends State<FriendsListModal> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)), // 角丸を強調
-          backgroundColor: AppColors.background,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          backgroundColor: Colors.white,
           title: Row(
             children: [
               Container(

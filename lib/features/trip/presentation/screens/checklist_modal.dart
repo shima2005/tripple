@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:new_tripple/core/constants/modal_constants.dart';
 import 'package:new_tripple/core/theme/app_colors.dart';
 import 'package:new_tripple/features/trip/domain/trip_cubit.dart';
 import 'package:new_tripple/features/trip/domain/trip_state.dart';
 import 'package:new_tripple/shared/widgets/common_inputs.dart';
-import 'package:new_tripple/shared/widgets/modal_header.dart';
+import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
 
 class ChecklistModal extends StatefulWidget {
   const ChecklistModal({super.key});
@@ -27,36 +28,36 @@ class _ChecklistModalState extends State<ChecklistModal> {
         final checkedCount = items.where((i) => i.isChecked).length;
         final progress = items.isEmpty ? 0.0 : checkedCount / items.length;
 
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.85,
-          padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-          ),
+        return TrippleModalScaffold(
+          title: 'Packing List',
+          icon: Icons.checklist_rounded,
+          heightRatio: TrippleModalSize.mediumRatio,
+          
+          // リスト自体をスクロールさせたいので、Scaffoldの親スクロールはOFF
+          isScrollable: false,
+
+          // ヘッダー右側に進捗を表示
+          extraHeaderActions: [
+             Center(
+               child: Text(
+                 '${(progress * 100).toInt()}%',
+                 style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+               ),
+             ),
+             const SizedBox(width: 8),
+             SizedBox(
+               width: 20, height: 20,
+               child: CircularProgressIndicator(
+                 value: progress,
+                 strokeWidth: 3,
+                 backgroundColor: Colors.grey[200],
+                 valueColor: const AlwaysStoppedAnimation<Color>(AppColors.accent),
+               ),
+             ),
+          ],
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
-              TrippleModalHeader(icon: Icons.backpack_outlined,title: "Packing List"),
-
-              const SizedBox(height: 16),
-
-              // Progress Bar
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 8,
-                  backgroundColor: Colors.grey[200],
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text('$checkedCount / ${items.length} items packed', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-              
-              const SizedBox(height: 24),
-
               // 👇 修正: プリセットボタン (リストが空の時だけ表示)
               if (items.isEmpty)
                 Padding(

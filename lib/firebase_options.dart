@@ -41,7 +41,7 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCY9Jr9ZFkc5UQbKxuSvxkq_IlFsulGtb4',
+    apiKey: 'AIzaSyDWnf_V2QTggKrCx6gpVkoZQvKOYJY5Rpg',
     appId: '1:1036053921134:web:7fce9d9c2df9a920a4957f',
     messagingSenderId: '1036053921134',
     projectId: 'new-tripple',
@@ -51,7 +51,7 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBQWh5BMvhk94RC-AzQpYa9jbTw5Xus8YQ',
+    apiKey: 'AIzaSyBGZq12RjPfc4EIBvlQuvy1PXlb2vVmMsE',
     appId: '1:1036053921134:android:a9b5c6a2d196b958a4957f',
     messagingSenderId: '1036053921134',
     projectId: 'new-tripple',
@@ -59,11 +59,13 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAFwCK8VhPUxnfQO8ZpDRWs-s9qZdR6r3I',
+    apiKey: 'AIzaSyA-Zol0RUIq3UyQKm9yS4cxR4USmd8iI38',
     appId: '1:1036053921134:ios:cf92d290b3cd4615a4957f',
     messagingSenderId: '1036053921134',
     projectId: 'new-tripple',
     storageBucket: 'new-tripple.firebasestorage.app',
+    androidClientId: '1036053921134-d51psrs1cc6cnqm4or92cffo470o0dh1.apps.googleusercontent.com',
+    iosClientId: '1036053921134-9dr0qq727k9it9h1hc54hfo6o4n4t0ig.apps.googleusercontent.com',
     iosBundleId: 'com.example.newTripple',
   );
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:new_tripple/core/constants/modal_constants.dart';
 import 'package:new_tripple/core/theme/app_colors.dart';
 import 'package:new_tripple/core/theme/app_text_styles.dart';
 import 'package:new_tripple/features/trip/domain/trip_cubit.dart';
@@ -9,7 +10,7 @@ import 'package:new_tripple/models/trip.dart';
 import 'package:new_tripple/shared/widgets/common_inputs.dart';
 import 'package:new_tripple/features/trip/presentation/screens/place_search_modeal.dart';
 import 'package:new_tripple/services/geocoding_service.dart';
-import 'package:new_tripple/shared/widgets/modal_header.dart';
+import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
 import 'package:new_tripple/shared/widgets/tripple_toast.dart';
 
 class PastTripLogModal extends StatefulWidget {
@@ -28,31 +29,41 @@ class _PastTripLogModalState extends State<PastTripLogModal> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return TrippleModalScaffold(
+      // 👇 1. タイトルを動的に切り替え！
+      title: _isAdding ? "New Entry" : "Past Travel Log",
+      // アイコンも切り替えるとオシャレ
+      icon: _isAdding ? Icons.edit_location_alt_rounded : Icons.history_edu_rounded,
+      
+      heightRatio: TrippleModalSize.highRatio,
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
-      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TrippleModalHeader(icon: Icons.history_edu_rounded, title: "Past Travel Log"),
-          const SizedBox(height: 16),
-          
-          if (_isAdding) 
-            Expanded(child: _buildAddForm()) 
-          else 
-            Expanded(child: _buildHistoryList()),
-        ],
-      ),
+      // 👇 2. 「追加モード」のときだけ、ヘッダー右側に「戻るボタン」を表示！
+      extraHeaderActions: _isAdding 
+        ? [
+            TextButton.icon(
+              onPressed: () => setState(() => _isAdding = false),
+              icon: const Icon(Icons.arrow_back_rounded, size: 18),
+              label: const Text('Back'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+            )
+          ] 
+        : null,
+
+      onSave: _isAdding ? _saveTrip : null,
+      saveLabel: 'Save to History',
+
+      isScrollable: _isAdding,
+
+      child: _isAdding 
+        ? _buildAddForm() 
+        : _buildHistoryList(),
     );
   }
 
-  // 1. 履歴一覧モード (前回と同じだが、再掲)
+  // 1. 履歴一覧モード (変更なし)
   Widget _buildHistoryList() {
     return Column(
       children: [
@@ -62,7 +73,7 @@ class _PastTripLogModalState extends State<PastTripLogModal> {
             onPressed: () {
               setState(() {
                 _isAdding = true;
-                _titleController.text = 'Past Trip'; // 初期化時にセット
+                _titleController.text = 'Past Trip';
                 _tempDestinations = [];
               });
             },
@@ -106,6 +117,69 @@ class _PastTripLogModalState extends State<PastTripLogModal> {
       ],
     );
   }
+
+  // 2. 新規作成フォームモード (手動ヘッダーを削除！)
+  Widget _buildAddForm() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 👇 3. ここにあった Row(戻るボタン + タイトル) は削除！
+        // Scaffoldのヘッダーが代わりになるので不要です。
+
+        TrippleTextField(
+          controller: _titleController,
+          hintText: 'Trip Title (e.g. Eurotrip 2010)',
+          label: 'Title',
+        ),
+        const SizedBox(height: 24),
+
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Destinations', style: AppTextStyles.label),
+            TextButton.icon(
+              onPressed: _addNewDestination,
+              icon: const Icon(Icons.add_rounded, size: 16),
+              label: const Text('Add Place'),
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        if (_tempDestinations.isEmpty)
+          Container(
+            width: double.infinity,
+            height: 150,
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.map_outlined, color: Colors.grey, size: 40),
+                const SizedBox(height: 8),
+                Text('Add places you visited!', style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey)),
+              ],
+            ),
+          )
+        else
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _tempDestinations.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final dest = _tempDestinations[index];
+              return _buildEditDestinationItem(index, dest);
+            },
+          ),
+      ],
+    );
+  }
+
 
   // 履歴アイテム (前回と同じ)
   Widget _buildHistoryItem(Trip trip) {
@@ -151,83 +225,6 @@ class _PastTripLogModalState extends State<PastTripLogModal> {
           ),
         ],
       ),
-    );
-  }
-
-  // ----------------------------------------------------------------
-  // 2. 新規作成フォームモード (改修！)
-  // ----------------------------------------------------------------
-  Widget _buildAddForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            IconButton(
-              onPressed: () => setState(() => _isAdding = false),
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-            ),
-            const Text("New Entry", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        const SizedBox(height: 16),
-
-        TrippleTextField(
-          controller: _titleController,
-          hintText: 'Trip Title (e.g. Eurotrip 2010)',
-          label: 'Title',
-        ),
-        const SizedBox(height: 24),
-
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Destinations', style: AppTextStyles.label),
-            TextButton.icon(
-              onPressed: _addNewDestination,
-              icon: const Icon(Icons.add_rounded, size: 16),
-              label: const Text('Add Place'),
-              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-
-        Expanded(
-          child: _tempDestinations.isEmpty
-              ? Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.map_outlined, color: Colors.grey, size: 40),
-                      const SizedBox(height: 8),
-                      Text('Add places you visited!', style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey)),
-                    ],
-                  ),
-                )
-              : ListView.separated(
-                  itemCount: _tempDestinations.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final dest = _tempDestinations[index];
-                    return _buildEditDestinationItem(index, dest);
-                  },
-                ),
-        ),
-        
-        const SizedBox(height: 16),
-        TripplePrimaryButton(
-          text: 'Save to History',
-          onPressed: _saveTrip,
-          backgroundColor: _tempDestinations.isEmpty ? Colors.grey : AppColors.primary,
-        ),
-      ],
     );
   }
 

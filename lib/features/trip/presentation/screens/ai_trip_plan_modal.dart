@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart'; // 👈 Cupertinoウィジェット用
-import 'dart:ui'; // 👈 ScrollConfiguration用
+import 'package:flutter/cupertino.dart'; 
+import 'dart:ui'; 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,10 +10,12 @@ import 'package:new_tripple/features/trip/domain/trip_cubit.dart';
 import 'package:new_tripple/models/enums.dart';
 import 'package:new_tripple/models/schedule_item.dart';
 import 'package:new_tripple/models/trip.dart';
+import 'package:new_tripple/services/gemini_service.dart';
 import 'package:new_tripple/services/geocoding_service.dart';
 import 'package:new_tripple/shared/widgets/common_inputs.dart';
 import 'package:new_tripple/features/trip/presentation/screens/place_search_modeal.dart';
-import 'package:new_tripple/services/gemini_service.dart';
+import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
+import 'package:new_tripple/core/constants/modal_constants.dart';
 
 class AITripPlanModal extends StatefulWidget {
   final Function(Trip) onTripCreated;
@@ -25,34 +27,26 @@ class AITripPlanModal extends StatefulWidget {
 }
 
 class _AITripPlanModalState extends State<AITripPlanModal> {
+  // ... (変数はそのまま)
   final PageController _pageController = PageController();
   int _currentStep = 0;
   bool _isLoading = false;
-
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _startLocController = TextEditingController();
   final TextEditingController _endLocController = TextEditingController();
   final TextEditingController _excludeController = TextEditingController();
-
   PlaceSearchResult? _destination;
   DateTimeRange? _dateRange;
-  
   TimeOfDay _startTime = const TimeOfDay(hour: 10, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 19, minute: 0);
-
   TransportType _transportType = TransportType.transit;
   String _tripStyle = 'Balanced'; 
   final List<String> _excludedPlaces = [];
   final List<DateTime> _freeDates = [];
   final List<AccommodationRequest> _accommodations = []; 
-  
   bool _autoSuggest = true;
   final List<ScheduledItem> _mustVisitItems = [];
-
-  // 👇 スタイルを追加！
-  final List<String> _styles = [
-    'Balanced', 'Relaxed', 'Packed', 'History', 'Foodie', 'Nature', 'Maniac', 'Luxury', 'Local'
-  ];
+  final List<String> _styles = ['Balanced', 'Relaxed', 'Packed', 'History', 'Foodie', 'Nature', 'Maniac', 'Luxury', 'Local'];
 
   @override
   void dispose() {
@@ -67,22 +61,23 @@ class _AITripPlanModalState extends State<AITripPlanModal> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return _AILoadingView(destination: _destination?.name ?? 'Destination');
+      return TrippleModalScaffold(
+        title: 'Generating...',
+        icon: Icons.auto_awesome,
+        heightRatio: TrippleModalSize.highRatio,
+        isScrollable: false, 
+        child: _AILoadingView(destination: _destination?.name ?? 'Destination'),
+      );
     }
 
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return TrippleModalScaffold(
+      title: 'AI Trip Planner',
+      icon: Icons.auto_awesome,
+      heightRatio: TrippleModalSize.highRatio,
+      isScrollable: false, // PageViewを使うのでfalse
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.95,
-      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
       child: Column(
         children: [
-          _buildHeader(),
-          const SizedBox(height: 24),
           _buildProgressIndicator(),
           const SizedBox(height: 24),
           Expanded(
@@ -103,323 +98,138 @@ class _AITripPlanModalState extends State<AITripPlanModal> {
       ),
     );
   }
-  
-  Widget _buildHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-              child: const Icon(Icons.auto_awesome, color: AppColors.primary, size: 24),
-            ),
-            const SizedBox(width: 12),
-            Text('AI Trip Planner', style: AppTextStyles.h2),
-          ],
-        ),
-        IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.close_rounded, color: Colors.grey),
-        ),
-      ],
-    );
-  }
 
-  Widget _buildProgressIndicator() {
-    return Row(
-      children: List.generate(6, (index) {
-        final isActive = index <= _currentStep;
-        return Expanded(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            height: 6,
-            decoration: BoxDecoration(
-              color: isActive ? AppColors.primary : Colors.grey[200],
-              borderRadius: BorderRadius.circular(3),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
-  // --- Step 1: Basic Info ---
+  // --- 👇 修正: Scrollableなレイアウトに変更 (Step 1) ---
   Widget _buildStep1Basic() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Step 1: Basics', style: AppTextStyles.label),
-        const SizedBox(height: 16),
-        
-        GestureDetector(
-          onTap: () async {
-            final result = await showModalBottomSheet<PlaceSearchResult>(
-              context: context,
-              backgroundColor: Colors.transparent,
-              builder: (context) => const PlaceSearchModal(hintText: 'Destination (e.g. Kyoto, France)'),
-            );
-            if (result != null) {
-              setState(() {
-                _destination = result;
-                if (_titleController.text.isEmpty) _titleController.text = "Trip to ${result.name}";
-              });
-            }
-          },
-          child: _buildSelectBox(
-            icon: Icons.map_rounded, 
-            text: _destination?.name ?? 'Where are you going?',
-            isActive: _destination != null,
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        GestureDetector(
-          onTap: () async {
-            final picked = await showDateRangePicker(
-              context: context,
-              firstDate: DateTime.now(),
-              lastDate: DateTime.now().add(const Duration(days: 365)),
-              initialDateRange: _dateRange,
-              builder: (context, child) {
-                return Theme(
-                  data: Theme.of(context).copyWith(colorScheme: const ColorScheme.light(primary: AppColors.primary)),
-                  child: child!,
-                );
-              },
-            );
-            if (picked != null) setState(() => _dateRange = picked);
-          },
-          child: _buildSelectBox(
-            icon: Icons.calendar_today_rounded,
-            text: _dateRange == null 
-                ? 'When?' 
-                : '${DateFormat('yyyy/MM/dd').format(_dateRange!.start)} - ${DateFormat('MM/dd').format(_dateRange!.end)}',
-            isActive: _dateRange != null,
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        TrippleTextField(
-          controller: _titleController,
-          label: 'Trip Title',
-          hintText: 'e.g. Summer Vacation',
-        ),
-        
-        const Spacer(),
-        TripplePrimaryButton(
-          text: 'Next',
-          onPressed: () {
-            if (_destination != null && _dateRange != null && _titleController.text.isNotEmpty) {
-              _nextStep();
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
-            }
-          },
-        ),
-      ],
-    );
-  }
-
-  // --- Step 1.5: Logistics (スクロールピッカー対応！) ---
-  Widget _buildStepLogistics() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Step 2: Start & End', style: AppTextStyles.label),
-        const SizedBox(height: 20),
-        
-        // Start
-        Row(children: [const Icon(Icons.flight_takeoff_rounded, color: AppColors.primary), const SizedBox(width: 8), Text('Day 1 Start', style: AppTextStyles.h3.copyWith(fontSize: 16))]),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              flex: 2,
-              child: GestureDetector(
-                // 👇 修正: クパチーノピッカーを呼び出し
-                onTap: () => _pickTimeCupertino(true),
-                child: _buildSelectBox(icon: Icons.access_time, text: _formatTime(_startTime), isActive: true, isSmall: true),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 3,
-              child: TrippleTextField(
-                controller: _startLocController,
-                hintText: 'e.g. Tokyo St.',
-                label: null,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 32),
-
-        // End
-        Row(children: [const Icon(Icons.flight_land_rounded, color: AppColors.accent), const SizedBox(width: 8), Text('Last Day Goal', style: AppTextStyles.h3.copyWith(fontSize: 16))]),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              flex: 2,
-              child: GestureDetector(
-                // 👇 修正: クパチーノピッカーを呼び出し
-                onTap: () => _pickTimeCupertino(false),
-                child: _buildSelectBox(icon: Icons.access_time, text: _formatTime(_endTime), isActive: true, isSmall: true),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              flex: 3,
-              child: TrippleTextField(
-                controller: _endLocController,
-                hintText: 'e.g. Airport',
-                label: null,
-              ),
-            ),
-          ],
-        ),
-        
-        const Spacer(),
-        _buildNavButtons(),
-      ],
-    );
-  }
-
-  // --- Step 2: Preferences (スクロール対応 & 新チップデザイン) ---
-  Widget _buildStep2Preferences() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Step 3: Preferences', style: AppTextStyles.label),
-        const SizedBox(height: 16),
-
-        // Style (ScrollConfigurationでドラッグ対応)
-        Text('Trip Style', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        ScrollConfiguration(
-          behavior: ScrollConfiguration.of(context).copyWith(dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse}),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Row(
-              children: _styles.map((style) => TrippleSelectionChip(
-                label: style,
-                icon: Icons.style_rounded,
-                isSelected: _tripStyle == style,
-                onTap: () => setState(() => _tripStyle = style),
-              )).toList(),
-            ),
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        // Transport
-        Text('Transport Mode', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
-        ScrollConfiguration(
-          behavior: ScrollConfiguration.of(context).copyWith(dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse}),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Row(
-              children: [TransportType.transit, TransportType.car, TransportType.walk].map((type) {
-                return TrippleSelectionChip(
-                  label: type.displayName,
-                  icon: type.icon,
-                  isSelected: _transportType == type,
-                  onTap: () => setState(() => _transportType = type),
-                );
-              }).toList(),
-            ),
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        // Exclude Places (チップデザイン刷新)
-        Text('Exclude Places', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: TrippleTextField(
-                controller: _excludeController,
-                hintText: 'Add place to skip...',
-                onSubmitted: (val) {
-                  if (val.isNotEmpty) {
+    return CustomScrollView(
+      slivers: [
+        SliverFillRemaining(
+          hasScrollBody: false, // 中身がスクロール不要ならフィット、必要ならスクロール
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Step 1: Basics', style: AppTextStyles.label),
+              const SizedBox(height: 16),
+              
+              GestureDetector(
+                onTap: () async {
+                  final result = await showModalBottomSheet<PlaceSearchResult>(
+                    context: context,
+                    isScrollControlled: true, // フルスクリーン検索用
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => const PlaceSearchModal(hintText: 'Destination (e.g. Kyoto, France)'),
+                  );
+                  if (result != null) {
                     setState(() {
-                      _excludedPlaces.add(val);
-                      _excludeController.clear();
+                      _destination = result;
+                      if (_titleController.text.isEmpty) _titleController.text = "Trip to ${result.name}";
                     });
                   }
                 },
+                child: _buildSelectBox(icon: Icons.map_rounded, text: _destination?.name ?? 'Where are you going?', isActive: _destination != null),
               ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: () {
-                if (_excludeController.text.isNotEmpty) {
-                  setState(() {
-                    _excludedPlaces.add(_excludeController.text);
-                    _excludeController.clear();
-                  });
+              const SizedBox(height: 16),
+
+              GestureDetector(
+                onTap: () async {
+                  final picked = await showDateRangePicker(
+                    context: context,
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                    initialDateRange: _dateRange,
+                    builder: (context, child) => Theme(data: Theme.of(context).copyWith(colorScheme: const ColorScheme.light(primary: AppColors.primary)), child: child!),
+                  );
+                  if (picked != null) setState(() => _dateRange = picked);
+                },
+                child: _buildSelectBox(icon: Icons.calendar_today_rounded, text: _dateRange == null ? 'When?' : '${DateFormat('yyyy/MM/dd').format(_dateRange!.start)} - ${DateFormat('MM/dd').format(_dateRange!.end)}', isActive: _dateRange != null),
+              ),
+              const SizedBox(height: 16),
+
+              TrippleTextField(controller: _titleController, label: 'Trip Title', hintText: 'e.g. Summer Vacation'),
+              
+              const Spacer(), // 下部に余白を埋める
+              const SizedBox(height: 24), // Spacerが0になった時の最低余白
+              
+              TripplePrimaryButton(
+                text: 'Next', 
+                onPressed: () {
+                  if (_destination != null && _dateRange != null && _titleController.text.isNotEmpty) {
+                    _nextStep();
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
+                  }
                 }
-              },
-              icon: const Icon(Icons.add_circle_rounded, color: AppColors.primary, size: 32),
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _excludedPlaces.map((p) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey[300]!),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(p, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () => setState(() => _excludedPlaces.remove(p)),
-                  child: const Icon(Icons.close_rounded, size: 16, color: Colors.grey),
-                ),
-              ],
-            ),
-          )).toList(),
-        ),
+      ],
+    );
+  }
 
-        const SizedBox(height: 24),
-        // Free Dates
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Free Days (No Plan)', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
-            TextButton.icon(
-              onPressed: _pickFreeDate,
-              icon: const Icon(Icons.add_rounded, size: 16),
-              label: const Text('Add Date'),
-            ),
-          ],
+  // --- 👇 修正: Scrollableなレイアウトに変更 (Step 2) ---
+  Widget _buildStepLogistics() {
+    return CustomScrollView(
+      slivers: [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Step 2: Start & End', style: AppTextStyles.label),
+              const SizedBox(height: 20),
+              Row(children: [const Icon(Icons.flight_takeoff_rounded, color: AppColors.primary), const SizedBox(width: 8), Text('Day 1 Start', style: AppTextStyles.h3.copyWith(fontSize: 16))]),
+              const SizedBox(height: 12),
+              Row(children: [Expanded(flex: 2, child: GestureDetector(onTap: () => _pickTimeCupertino(true), child: _buildSelectBox(icon: Icons.access_time, text: _formatTime(_startTime), isActive: true, isSmall: true))), const SizedBox(width: 8), Expanded(flex: 3, child: TrippleTextField(controller: _startLocController, hintText: 'e.g. Tokyo St.', label: null))]),
+              const SizedBox(height: 32),
+              Row(children: [const Icon(Icons.flight_land_rounded, color: AppColors.accent), const SizedBox(width: 8), Text('Last Day Goal', style: AppTextStyles.h3.copyWith(fontSize: 16))]),
+              const SizedBox(height: 12),
+              Row(children: [Expanded(flex: 2, child: GestureDetector(onTap: () => _pickTimeCupertino(false), child: _buildSelectBox(icon: Icons.access_time, text: _formatTime(_endTime), isActive: true, isSmall: true))), const SizedBox(width: 8), Expanded(flex: 3, child: TrippleTextField(controller: _endLocController, hintText: 'e.g. Airport', label: null))]),
+              
+              const Spacer(),
+              const SizedBox(height: 24),
+              _buildNavButtons(),
+            ],
+          ),
         ),
-        Wrap(
-          spacing: 8,
-          children: _freeDates.map((d) => Chip(
-            label: Text(DateFormat('MM/dd').format(d)),
-            onDeleted: () => setState(() => _freeDates.remove(d)),
-            backgroundColor: AppColors.accent.withValues(alpha: 0.1),
-          )).toList(),
-        ),
+      ],
+    );
+  }
 
-        const Spacer(),
-        _buildNavButtons(),
+  // --- 👇 修正: Scrollableなレイアウトに変更 (Step 3) ---
+  Widget _buildStep2Preferences() {
+    return CustomScrollView(
+      slivers: [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Step 3: Preferences', style: AppTextStyles.label),
+              const SizedBox(height: 16),
+              Text('Trip Style', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              ScrollConfiguration(behavior: ScrollConfiguration.of(context).copyWith(dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse}), child: SingleChildScrollView(scrollDirection: Axis.horizontal, physics: const BouncingScrollPhysics(), child: Row(children: _styles.map((style) => TrippleSelectionChip(label: style, icon: Icons.style_rounded, isSelected: _tripStyle == style, onTap: () => setState(() => _tripStyle = style))).toList()))),
+              const SizedBox(height: 24),
+              Text('Transport Mode', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              ScrollConfiguration(behavior: ScrollConfiguration.of(context).copyWith(dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse}), child: SingleChildScrollView(scrollDirection: Axis.horizontal, physics: const BouncingScrollPhysics(), child: Row(children: [TransportType.transit, TransportType.car, TransportType.walk].map((type) { return TrippleSelectionChip(label: type.displayName, icon: type.icon, isSelected: _transportType == type, onTap: () => setState(() => _transportType = type)); }).toList()))),
+              const SizedBox(height: 24),
+              Text('Exclude Places', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Row(children: [Expanded(child: TrippleTextField(controller: _excludeController, hintText: 'Add place to skip...', onSubmitted: (val) { if (val.isNotEmpty) { setState(() { _excludedPlaces.add(val); _excludeController.clear(); }); } })), const SizedBox(width: 8), IconButton(onPressed: () { if (_excludeController.text.isNotEmpty) { setState(() { _excludedPlaces.add(_excludeController.text); _excludeController.clear(); }); } }, icon: const Icon(Icons.add_circle_rounded, color: AppColors.primary, size: 32))]),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: _excludedPlaces.map((p) => Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey[300]!)), child: Row(mainAxisSize: MainAxisSize.min, children: [Text(p, style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textSecondary)), const SizedBox(width: 8), GestureDetector(onTap: () => setState(() => _excludedPlaces.remove(p)), child: const Icon(Icons.close_rounded, size: 16, color: Colors.grey))]))).toList()),
+              const SizedBox(height: 24),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('Free Days (No Plan)', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)), TextButton.icon(onPressed: _pickFreeDate, icon: const Icon(Icons.add_rounded, size: 16), label: const Text('Add Date'))]),
+              Wrap(spacing: 8, children: _freeDates.map((d) => Chip(label: Text(DateFormat('MM/dd').format(d)), onDeleted: () => setState(() => _freeDates.remove(d)), backgroundColor: AppColors.accent.withValues(alpha: 0.1))).toList()),
+              
+              const Spacer(),
+              const SizedBox(height: 24),
+              _buildNavButtons(),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -602,6 +412,25 @@ class _AITripPlanModalState extends State<AITripPlanModal> {
       padding: EdgeInsets.all(isSmall ? 12 : 16),
       decoration: BoxDecoration(color: AppColors.background, border: Border.all(color: isActive ? AppColors.primary : Colors.transparent), borderRadius: BorderRadius.circular(16)),
       child: Row(children: [Icon(icon, color: isActive ? AppColors.primary : Colors.grey, size: isSmall ? 20 : 24), const SizedBox(width: 12), Expanded(child: Text(text, style: isActive ? AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.bold, fontSize: isSmall ? 14 : 16) : AppTextStyles.bodyMedium.copyWith(color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis))]),
+    );
+  }
+
+  Widget _buildProgressIndicator() {
+    return Row(
+      children: List.generate(6, (index) {
+        final isActive = index <= _currentStep;
+        return Expanded(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            height: 6,
+            decoration: BoxDecoration(
+              color: isActive ? AppColors.primary : Colors.grey[200],
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+        );
+      }),
     );
   }
 

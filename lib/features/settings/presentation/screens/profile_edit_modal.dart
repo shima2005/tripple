@@ -2,14 +2,15 @@ import 'dart:async'; // Timer用
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:new_tripple/core/constants/modal_constants.dart';
 import 'package:new_tripple/core/theme/app_colors.dart';
-import 'package:new_tripple/core/theme/app_text_styles.dart';
 import 'package:new_tripple/features/settings/domain/settings_cubit.dart';
 import 'package:new_tripple/features/user/data/user_repository.dart';
 import 'package:new_tripple/models/user_profile.dart';
 import 'package:new_tripple/shared/widgets/common_inputs.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:new_tripple/services/storage_service.dart';
+import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
 
 class ProfileEditModal extends StatefulWidget {
   final UserProfile? profile;
@@ -124,20 +125,19 @@ class _ProfileEditModalState extends State<ProfileEditModal> {
       }
     }
 
-    return Container(
-      padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
+    return TrippleModalScaffold(
+      title: 'Edit Profile',
+      heightRatio: TrippleModalSize.highRatio,
+      
+      onSave: (_isIdValid && !_isIdChecking) ? _saveProfile : null, // ID無効なら押せない
+      saveLabel: 'Save Profile',
+      isLoading: _isLoading,
+
       child: Form(
         key: _formKey,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Edit Profile', style: AppTextStyles.h2),
-            const SizedBox(height: 24),
-
             // 📷 アイコン画像
             GestureDetector(
               onTap: _pickImage,
@@ -191,17 +191,6 @@ class _ProfileEditModalState extends State<ProfileEditModal> {
                 padding: EdgeInsets.only(top: 6, left: 12),
                 child: Align(alignment: Alignment.centerLeft, child: Text('このIDは使用可能です！ 👍', style: TextStyle(color: Colors.green, fontSize: 12))),
               ),
-
-            const SizedBox(height: 32),
-
-            SizedBox(
-              width: double.infinity,
-              child: TripplePrimaryButton(
-                text: _isLoading ? 'Saving...' : 'Save Profile',
-                // チェック中やエラー時は押せないようにする
-                onPressed: (_isLoading || !_isIdValid || _isIdChecking) ? (){} : _saveProfile,
-              ),
-            ),
           ],
         ),
       ),

@@ -4,8 +4,10 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:new_tripple/core/constants/modal_constants.dart';
 import 'package:new_tripple/features/trip/domain/trip_cubit.dart';
 import 'package:new_tripple/models/enums.dart';
+import 'package:new_tripple/shared/widgets/tripple_modal_scaffold.dart';
 import 'package:new_tripple/shared/widgets/tripple_toast.dart';
 import 'package:uuid/uuid.dart';
 import 'package:new_tripple/core/theme/app_colors.dart';
@@ -150,283 +152,255 @@ class _ExpenseEditModalState extends State<ExpenseEditModal> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-            child: TrippleModalHeader(
-              title: widget.expense == null ? 'New Expense' : 'Edit Expense',
+    // 👇 TrippleModalScaffoldへ移行
+    return TrippleModalScaffold(
+      title: widget.expense == null ? 'New Expense' : 'Edit Expense',
+      heightRatio: TrippleModalSize.highRatio,
+      
+      onSave: _save,
+      saveLabel: 'Save Expense',
+
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildPlanLinkButton(),
+            const SizedBox(height: 16),
+
+            TrippleTextField(
+              controller: _titleController,
+              label: 'Title',
+              hintText: 'Dinner, Taxi, etc.',
+              validator: (v) => v!.isEmpty ? 'Please enter title' : null,
             ),
-          ),
-          
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildPlanLinkButton(),
-                    const SizedBox(height: 16),
+            const SizedBox(height: 24),
 
-                    TrippleTextField(
-                      controller: _titleController,
-                      label: 'Title',
-                      hintText: 'Dinner, Taxi, etc.',
-                      validator: (v) => v!.isEmpty ? 'Please enter title' : null,
-                    ),
-                    const SizedBox(height: 24),
+            _buildAmountSection(),
+            const SizedBox(height: 24),
 
-                    _buildAmountSection(),
-                    const SizedBox(height: 24),
-
-                    Text('Category', style: AppTextStyles.label),
-                    const SizedBox(height: 12),
-                    ScrollConfiguration(
-                      behavior: ScrollConfiguration.of(context).copyWith(
-                        dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
-                      ),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        physics: const BouncingScrollPhysics(),
-                        child: Row(
-                          children: _categories.map((cat) {
-                            return TrippleSelectionChip(
-                              label: cat[0].toUpperCase() + cat.substring(1),
-                              icon: _getCategoryIcon(cat),
-                              isSelected: _category == cat,
-                              onTap: () => setState(() => _category = cat),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Payer', style: AppTextStyles.label),
-                              const SizedBox(height: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: AppColors.background,
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<String>(
-                                    value: _allMembers.any((m) => m['id'] == _payerId) ? _payerId : null,
-                                    isExpanded: true,
-                                    // 🎨 Dropdown背景色統一
-                                    dropdownColor: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    items: _allMembers.map((m) {
-                                      return DropdownMenuItem(
-                                        value: m['id'],
-                                        child: Text(m['name'] ?? 'Unknown', style: AppTextStyles.bodyLarge),
-                                      );
-                                    }).toList(),
-                                    onChanged: (v) => setState(() => _payerId = v!),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () async {
-                              // 🎨 DatePickerの色統一
-                              final d = await showDatePicker(
-                                context: context, 
-                                initialDate: _date, 
-                                firstDate: DateTime(2000), 
-                                lastDate: DateTime(2100),
-                                builder: (context, child) {
-                                  return Theme(
-                                    data: Theme.of(context).copyWith(
-                                      colorScheme: const ColorScheme.light(
-                                        primary: AppColors.primary, // ヘッダー背景など
-                                        onPrimary: Colors.white, // ヘッダー文字
-                                        onSurface: AppColors.textPrimary, // カレンダー文字
-                                      ),
-                                      textButtonTheme: TextButtonThemeData(
-                                        style: TextButton.styleFrom(
-                                          foregroundColor: AppColors.primary, // ボタン色
-                                        ),
-                                      ),
-                                    ),
-                                    child: child!,
-                                  );
-                                },
-                              );
-                              if(d != null) setState(() => _date = d);
-                            },
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Date', style: AppTextStyles.label),
-                                const SizedBox(height: 8),
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.background,
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Text(DateFormat('MM/dd').format(_date), style: AppTextStyles.bodyLarge),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 48),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('Split With', style: AppTextStyles.h3),
-                        DropdownButton<SplitMode>(
-                          value: _splitMode,
-                          underline: Container(),
-                          // 🎨 Dropdown背景色統一
-                          dropdownColor: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          style: AppTextStyles.bodyLarge.copyWith(color: AppColors.primary),
-                          icon: const Icon(Icons.tune, color: AppColors.primary, size: 20),
-                          onChanged: _onSplitModeChanged, 
-                          items: const [
-                            DropdownMenuItem(value: SplitMode.equal, child: Text('Equal Split')),
-                            DropdownMenuItem(value: SplitMode.share, child: Text('Per Person (Fixed)')),
-                            DropdownMenuItem(value: SplitMode.custom, child: Text('Custom Amount')),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-
-                    ..._allMembers.map((member) {
-                      final id = member['id']!;
-                      final isSelected = _payeeIds.contains(id);
-                      
-                      String amountStr = '';
-                      // double total = double.tryParse(_amountController.text) ?? 0; // 未使用なら削除可
-                      
-                      if (isSelected) {
-                        if (_splitMode == SplitMode.equal) {
-                          // 再計算用
-                          double currentTotal = double.tryParse(_amountController.text) ?? 0;
-                          amountStr = (currentTotal / (_payeeIds.isEmpty ? 1 : _payeeIds.length)).toStringAsFixed(0);
-                        } else if (_splitMode == SplitMode.share) {
-                           amountStr = _perPersonAmountController.text;
-                        } else {
-                          amountStr = (_customAmounts[id] ?? 0).toStringAsFixed(0);
-                        }
-                      }
-
-                      return InkWell(
-                        onTap: () {
-                          setState(() {
-                            if (isSelected) {
-                              _payeeIds.remove(id);
-                            } else {
-                              _payeeIds.add(id);
-                            }
-                            if (_splitMode == SplitMode.share) {
-                              _updateTotalFromPerPerson();
-                            } else if (_splitMode == SplitMode.custom) {
-                              _updateTotalFromCustomAmounts();
-                            }
-                          });
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8.0),
-                          child: Row(
-                            children: [
-                              Icon(
-                                isSelected ? Icons.check_circle : Icons.circle_outlined,
-                                color: isSelected ? AppColors.primary : Colors.grey.shade300,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(child: Text(member['name']!, style: AppTextStyles.bodyLarge)),
-                              
-                              if (isSelected && (_splitMode == SplitMode.equal || _splitMode == SplitMode.share))
-                                Text('$amountStr $_currency', style: AppTextStyles.bodyMedium),
-                              
-                              if (isSelected && _splitMode == SplitMode.custom)
-                                SizedBox(
-                                  width: 100,
-                                  height: 48,
-                                  child: TextField(
-                                    keyboardType: TextInputType.number,
-                                    textAlign: TextAlign.end,
-                                    decoration: InputDecoration(
-                                      hintText: '0',
-                                      filled: true,
-                                      fillColor: AppColors.background,
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide.none,
-                                      ),
-                                    ),
-                                    controller: TextEditingController(text: (_customAmounts[id] ?? 0) == 0 ? '' : (_customAmounts[id] ?? 0).toStringAsFixed(0))
-                                      ..selection = TextSelection.fromPosition(TextPosition(offset: ((_customAmounts[id] ?? 0) == 0 ? '' : (_customAmounts[id] ?? 0).toStringAsFixed(0)).length)),
-                                    onChanged: (val) {
-                                       setState(() {
-                                         _customAmounts[id] = double.tryParse(val) ?? 0;
-                                         _updateTotalFromCustomAmounts();
-                                       });
-                                    },
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                    
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12.0),
-                      child: TextButton.icon(
-                        onPressed: _showAddGuestDialog,
-                        icon: const Icon(Icons.person_add, color: AppColors.primary),
-                        label: Text('Add Guest', style: AppTextStyles.bodyLarge.copyWith(color: AppColors.primary)),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 0),
-                          alignment: Alignment.centerLeft,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 80),
-                  ],
+            Text('Category', style: AppTextStyles.label),
+            const SizedBox(height: 12),
+            ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.mouse},
+              ),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                child: Row(
+                  children: _categories.map((cat) {
+                    return TrippleSelectionChip(
+                      label: cat[0].toUpperCase() + cat.substring(1),
+                      icon: _getCategoryIcon(cat),
+                      isSelected: _category == cat,
+                      onTap: () => setState(() => _category = cat),
+                    );
+                  }).toList(),
                 ),
               ),
             ),
-          ),
-          
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            child: TripplePrimaryButton(
-              text: 'Save Expense',
-              onPressed: _save,
+            const SizedBox(height: 24),
+
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Payer', style: AppTextStyles.label),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _allMembers.any((m) => m['id'] == _payerId) ? _payerId : null,
+                            isExpanded: true,
+                            dropdownColor: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            items: _allMembers.map((m) {
+                              return DropdownMenuItem(
+                                value: m['id'],
+                                child: Text(m['name'] ?? 'Unknown', style: AppTextStyles.bodyLarge),
+                              );
+                            }).toList(),
+                            onChanged: (v) => setState(() => _payerId = v!),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () async {
+                      final d = await showDatePicker(
+                        context: context, 
+                        initialDate: _date, 
+                        firstDate: DateTime(2000), 
+                        lastDate: DateTime(2100),
+                        builder: (context, child) {
+                          return Theme(
+                            data: Theme.of(context).copyWith(
+                              colorScheme: const ColorScheme.light(
+                                primary: AppColors.primary, 
+                                onPrimary: Colors.white, 
+                                onSurface: AppColors.textPrimary, 
+                              ),
+                              textButtonTheme: TextButtonThemeData(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: AppColors.primary, 
+                                ),
+                              ),
+                            ),
+                            child: child!,
+                          );
+                        },
+                      );
+                      if(d != null) setState(() => _date = d);
+                    },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Date', style: AppTextStyles.label),
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(DateFormat('MM/dd').format(_date), style: AppTextStyles.bodyLarge),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
+            const Divider(height: 48),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Split With', style: AppTextStyles.h3),
+                DropdownButton<SplitMode>(
+                  value: _splitMode,
+                  underline: Container(),
+                  dropdownColor: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  style: AppTextStyles.bodyLarge.copyWith(color: AppColors.primary),
+                  icon: const Icon(Icons.tune, color: AppColors.primary, size: 20),
+                  onChanged: _onSplitModeChanged, 
+                  items: const [
+                    DropdownMenuItem(value: SplitMode.equal, child: Text('Equal Split')),
+                    DropdownMenuItem(value: SplitMode.share, child: Text('Per Person (Fixed)')),
+                    DropdownMenuItem(value: SplitMode.custom, child: Text('Custom Amount')),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            ..._allMembers.map((member) {
+              final id = member['id']!;
+              final isSelected = _payeeIds.contains(id);
+              
+              String amountStr = '';
+              
+              if (isSelected) {
+                if (_splitMode == SplitMode.equal) {
+                  double currentTotal = double.tryParse(_amountController.text) ?? 0;
+                  amountStr = (currentTotal / (_payeeIds.isEmpty ? 1 : _payeeIds.length)).toStringAsFixed(0);
+                } else if (_splitMode == SplitMode.share) {
+                   amountStr = _perPersonAmountController.text;
+                } else {
+                  amountStr = (_customAmounts[id] ?? 0).toStringAsFixed(0);
+                }
+              }
+
+              return InkWell(
+                onTap: () {
+                  setState(() {
+                    if (isSelected) {
+                      _payeeIds.remove(id);
+                    } else {
+                      _payeeIds.add(id);
+                    }
+                    if (_splitMode == SplitMode.share) {
+                      _updateTotalFromPerPerson();
+                    } else if (_splitMode == SplitMode.custom) {
+                      _updateTotalFromCustomAmounts();
+                    }
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isSelected ? Icons.check_circle : Icons.circle_outlined,
+                        color: isSelected ? AppColors.primary : Colors.grey.shade300,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(member['name']!, style: AppTextStyles.bodyLarge)),
+                      
+                      if (isSelected && (_splitMode == SplitMode.equal || _splitMode == SplitMode.share))
+                        Text('$amountStr $_currency', style: AppTextStyles.bodyMedium),
+                      
+                      if (isSelected && _splitMode == SplitMode.custom)
+                        SizedBox(
+                          width: 100,
+                          height: 48,
+                          child: TextField(
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.end,
+                            decoration: InputDecoration(
+                              hintText: '0',
+                              filled: true,
+                              fillColor: AppColors.background,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                            controller: TextEditingController(text: (_customAmounts[id] ?? 0) == 0 ? '' : (_customAmounts[id] ?? 0).toStringAsFixed(0))
+                              ..selection = TextSelection.fromPosition(TextPosition(offset: ((_customAmounts[id] ?? 0) == 0 ? '' : (_customAmounts[id] ?? 0).toStringAsFixed(0)).length)),
+                            onChanged: (val) {
+                               setState(() {
+                                 _customAmounts[id] = double.tryParse(val) ?? 0;
+                                 _updateTotalFromCustomAmounts();
+                               });
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+            
+            Padding(
+              padding: const EdgeInsets.only(top: 12.0),
+              child: TextButton.icon(
+                onPressed: _showAddGuestDialog,
+                icon: const Icon(Icons.person_add, color: AppColors.primary),
+                label: Text('Add Guest', style: AppTextStyles.bodyLarge.copyWith(color: AppColors.primary)),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 0),
+                  alignment: Alignment.centerLeft,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
