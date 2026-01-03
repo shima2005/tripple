@@ -42,6 +42,7 @@ class StepDetail {
       case TransportType.subway:
       case TransportType.shinkansen:
       case TransportType.bus:
+      case TransportType.ferry:
         // 路線名はUI側でリッチに表示するので、ここでは結合しない
         if (departureStation != null && arrivalStation != null) {
           return '$departureStation → $arrivalStation';
@@ -59,6 +60,14 @@ class StepDetail {
           return '$departureStation ✈ $arrivalStation';
         }
         return 'フライト';
+
+      case TransportType.waiting:
+        if (departureStation !=null){
+          return '{$departureStation}で待機';
+        }
+        return "待機";
+
+
 
       default:
         return '移動';

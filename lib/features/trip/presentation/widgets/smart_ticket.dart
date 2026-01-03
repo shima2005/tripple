@@ -8,21 +8,23 @@ import 'package:new_tripple/core/constants/city_codes.dart';
 import 'package:new_tripple/models/schedule_item.dart';
 import 'package:new_tripple/models/route_item.dart';
 import 'package:new_tripple/models/enums.dart';
-import 'package:new_tripple/models/step_detail.dart'; // 👈 StepDetailを使うので確認
+import 'package:new_tripple/models/step_detail.dart';
+import 'dart:math' as math;
 
 enum TicketMode { summary, stay, move }
 
 class SmartTicket extends StatelessWidget {
   final Trip trip;
   final VoidCallback? onTap;
-  
-  final TicketMode? mode; 
-  
-  final String? fromLocation;
+  final TicketMode? mode;
+
+  // Summary / Move 用
+  final String? fromLocation; 
   final String? fromCountryCode;
   final String? toLocation;
   final String? toCountryCode;
 
+  // Stay / Move 用
   final ScheduledItem? currentStay;
   final RouteItem? currentMove;
   final String? nextDestinationName;
@@ -52,198 +54,455 @@ class SmartTicket extends StatelessWidget {
   Widget build(BuildContext context) {
     final currentMode = _currentMode;
     final themeColor = _getModeColor(currentMode);
+    final ticketData = _buildTicketData(currentMode);
 
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        margin: const EdgeInsets.symmetric(horizontal: 20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Stack(
-            children: [
-              Positioned(
-                right: -20,
-                bottom: -20,
-                child: Icon(
-                  _getModeIcon(currentMode),
-                  size: 140,
-                  color: themeColor.withValues(alpha: 0.05),
-                ),
-              ),
-
-              Column(
-                mainAxisSize: MainAxisSize.min,
+    return Center(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          // 外側の余白も少し詰める
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+          child: PhysicalShape(
+            clipper: TicketClipper(holeRadius: 8, holePositionRatio: 0.65), // 切り欠きも少し小さく
+            color: Colors.white,
+            elevation: 6, // 影を少し控えめに
+            shadowColor: Colors.black.withOpacity(0.25),
+            child: SizedBox(
+              // 幅いっぱいまで広げるが、高さは中身なり
+              width: double.infinity,
+              child: Stack(
                 children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    height: 16, 
-                    width: double.infinity,
-                    color: themeColor,
-                  ),
-
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: _buildMainContent(currentMode, themeColor),
+                  // 背景の透かしアイコン
+                  Positioned(
+                    right: -20,
+                    bottom: -25,
+                    child: Transform.rotate(
+                      angle: -0.2,
+                      child: Icon(
+                        ticketData.bgIcon,
+                        size: 140, // 180 -> 140 に縮小
+                        color: themeColor.withOpacity(0.04),
+                      ),
                     ),
                   ),
 
-                  _buildDivider(),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // --- 1. Header Band (高さ縮小) ---
+                      Container(
+                        width: double.infinity,
+                        height: 34, // 48 -> 34 に大幅縮小
+                        color: themeColor,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: Icon(Icons.airplane_ticket, color: Colors.white, size: 12), // 16 -> 12
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  ticketData.headerTitle,
+                                  style: AppTextStyles.h3.copyWith(
+                                    color: Colors.white,
+                                    fontSize: 11, // 14 -> 11
+                                    letterSpacing: 1.1,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Text(
+                              'TRIPPLE PASS',
+                              style: AppTextStyles.label.copyWith(
+                                color: Colors.white.withOpacity(0.8),
+                                fontSize: 9, // 10 -> 9
+                                fontWeight: FontWeight.w900,
+                                fontStyle: FontStyle.italic,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
 
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-                    child: _buildSubContent(currentMode, themeColor),
+                      // --- 2. Main Body (パディング縮小) ---
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 14, 20, 10), // 上下左右を圧縮
+                        child: _buildMainBody(ticketData, themeColor),
+                      ),
+
+                      // --- 3. Perforation Area (高さ圧縮) ---
+                      SizedBox(
+                        height: 16, // 24 -> 16
+                        child: Center(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              return Flex(
+                                direction: Axis.horizontal,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: List.generate(
+                                  (constraints.constrainWidth() / 8).floor(),
+                                  (index) => SizedBox(
+                                    width: 3, height: 1,
+                                    child: DecoratedBox(decoration: BoxDecoration(color: Colors.grey[300])),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+
+                      // --- 4. Footer & Barcode (パディング圧縮) ---
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 6, 20, 14), // 上下左右を圧縮
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            // 左側: 情報カラム
+                            Expanded(
+                              flex: 3, // 少し領域を広げる
+                              child: _buildFooter(ticketData, themeColor),
+                            ),
+                            // バーコード
+                            const SizedBox(width: 12),
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                const BarcodeWidget(height: 28, width: 70), // サイズダウン
+                                const SizedBox(height: 2),
+                                Text(
+                                  '*9823-PASS*', 
+                                  style: TextStyle(fontSize: 7, color: Colors.grey, fontFamily: 'Courier'),
+                                )
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      // --- 5. Progress Bar ---
+                      if (ticketData.showProgress)
+                        _buildBottomProgressBar(ticketData, themeColor),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Color _getModeColor(TicketMode targetMode) {
-    switch (targetMode) {
-      case TicketMode.stay: return AppColors.third;
-      case TicketMode.move: return AppColors.accent;
-      default: return AppColors.primary;
-    }
+  // --- Layout Widgets ---
+
+  Widget _buildMainBody(_TicketData data, Color color) {
+    return Column(
+      children: [
+        if (data.mainRightText == null && data.mainRightWidget == null)
+          // Stay Mode (Left Align)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: data.mainLeftWidget ?? _buildBigText(data.mainLeftText, align: CrossAxisAlignment.start),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6), // 12 -> 6
+              _buildSubInfoRow(data),
+            ],
+          )
+        else
+          // Move / Summary Mode (3 Columns)
+          Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Left
+                  Expanded(
+                    flex: 3,
+                    child: data.mainLeftWidget ?? _buildBigText(data.mainLeftText, align: CrossAxisAlignment.start),
+                  ),
+                  
+                  // Center
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      children: [
+                        Icon(data.centerIcon ?? Icons.arrow_forward, color: color, size: 22), // 26 -> 22
+                        if (data.centerText != null && data.centerText!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: color.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: Text(
+                              data.centerText!,
+                              style: AppTextStyles.label.copyWith(
+                                fontSize: 8, // 9 -> 8
+                                color: color,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ]
+                      ],
+                    ),
+                  ),
+                  
+                  // Right
+                  Expanded(
+                    flex: 3,
+                    child: data.mainRightWidget ?? _buildBigText(data.mainRightText, align: CrossAxisAlignment.end),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10), // 16 -> 10
+              _buildSubInfoRow(data),
+            ],
+          ),
+      ],
+    );
   }
 
-  IconData _getModeIcon(TicketMode targetMode) {
-    switch (targetMode) {
-      case TicketMode.stay: return Icons.hotel_rounded;
-      case TicketMode.move: return Icons.directions_transit_rounded;
-      default: return Icons.flight_takeoff_rounded;
-    }
-  }
-
-  Widget _buildMainContent(TicketMode targetMode, Color color) {
-    switch (targetMode) {
-      case TicketMode.stay:
-        return KeyedSubtree(key: const ValueKey('stay'), child: _buildStayMain(color));
-      case TicketMode.move:
-        return KeyedSubtree(key: const ValueKey('move'), child: _buildMoveMain(color));
-      case TicketMode.summary:
-      default:
-        return KeyedSubtree(key: const ValueKey('summary'), child: _buildSummaryMain(color));
-    }
-  }
-
-  // ... ( _buildSummaryMain は変更なしのため省略。前のコードを維持してください ) ...
-  Widget _buildSummaryMain(Color color) {
-    // データがない場合のデフォルト値
-    final from = fromLocation ?? 'Home'; 
-    final to = toLocation ?? trip.title;
-
-    String toCode(String name, {String? countryCode}) {
-      if (name.isEmpty) return '???';
-      final lowerName = name.toLowerCase();
-      // 1. 都市コード辞書
-      if (cityCodes.containsKey(lowerName)) {
-        return cityCodes[lowerName]!;
-      }
-      for (final key in cityCodes.keys) {
-        if (lowerName.contains(key)) {
-          return cityCodes[key]!;
-        }
-      }
-      // 2. 国コードフォールバック (Alpha-2 -> Alpha-3 変換！)
-      if (countryCode != null && countryCode.isNotEmpty) {
-        final alpha3 = CountryConverter.toAlpha3(countryCode);
-        return (alpha3 ?? countryCode).toUpperCase(); 
-      }
-      // 3. 先頭3文字
-      final sanitized = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), ''); 
-      if (sanitized.length >= 3) {
-        return sanitized.substring(0, 3).toUpperCase();
-      }
-      return 'DST'; 
-    }
-
-    final fromCodeStr = toCode(from, countryCode: fromCountryCode);
-    final toCodeStr = toCode(to, countryCode: toCountryCode);
-    
+  Widget _buildSubInfoRow(_TicketData data) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        _buildCode(fromCodeStr, from), 
-        Column(
+        Row(
           children: [
-            Icon(Icons.flight_takeoff_rounded, color: color, size: 28),
+            Icon(Icons.schedule_rounded, size: 12, color: AppColors.textSecondary), // 14 -> 12
+            const SizedBox(width: 4),
             Text(
-              '${trip.endDate.difference(trip.startDate).inDays + 1} Days', 
-              style: AppTextStyles.label.copyWith(fontSize: 10, color: AppColors.textSecondary)
+              data.subInfoText ?? '',
+              style: AppTextStyles.label.copyWith(
+                color: AppColors.textSecondary, 
+                fontSize: 10, // 12 -> 10
+                fontWeight: FontWeight.w500
+              ),
             ),
           ],
         ),
-        _buildCode(toCodeStr, to), 
+        if (data.statusChipText != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey[300]!),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              data.statusChipText!.toUpperCase(),
+              style: AppTextStyles.label.copyWith(fontSize: 8, color: Colors.grey[600], fontWeight: FontWeight.bold),
+            ),
+          ),
       ],
     );
   }
 
-
-  // ... ( _buildStayMain は変更なし ) ...
-  Widget _buildStayMain(Color color) {
-    final item = currentStay!;
+  Widget _buildFooter(_TicketData data, Color color) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
+        _buildFooterColumn(data.footerLeftLabel, data.footerLeft, color),
+        _buildFooterColumn(data.footerCenterLabel, data.footerCenter, color),
+        _buildFooterColumn(data.footerRightLabel, data.footerRight, color),
+      ],
+    );
+  }
+
+  Widget _buildFooterColumn(String label, String value, Color color) {
+    final isEmpty = value == '--';
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label, 
+            style: AppTextStyles.label.copyWith(
+              fontSize: 7, // 8 -> 7
+              color: Colors.grey[500],
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.5
+            ),
+            maxLines: 1, overflow: TextOverflow.ellipsis,
           ),
-          child: Icon(item.category.icon, color: color, size: 24),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'CURRENT STAY',
-                style: AppTextStyles.label.copyWith(
-                  color: color, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 1.2
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                item.name, 
-                style: AppTextStyles.h3.copyWith(fontSize: 18),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: AppTextStyles.h3.copyWith(
+              fontSize: 13, // 15 -> 13
+              color: isEmpty ? Colors.grey[300] : AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBigText(String? text, {required CrossAxisAlignment align}) {
+    if (text == null) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: align,
+      children: [
+        Text(
+          text,
+          style: AppTextStyles.h3.copyWith(
+            fontSize: 24, // 28 -> 24
+            height: 1.0,
+            letterSpacing: -0.5,
+            fontWeight: FontWeight.w800,
+          ),
+          maxLines: 1, 
+          overflow: TextOverflow.ellipsis,
+          textAlign: align == CrossAxisAlignment.end ? TextAlign.end : TextAlign.start,
         ),
       ],
     );
   }
 
-  Widget _buildMoveMain(Color color) {
-    final item = currentMove!;
-    final destination = nextDestinationName ?? 'Destination'; // RouteItemとしての最終目的地
+  Widget _buildBottomProgressBar(_TicketData data, Color color) {
+    if (data.startTime == null || data.endTime == null) return const SizedBox.shrink();
 
-    // 1. 今どのステップにいるか判定 (前回と同じロジック)
-    StepDetail? activeStep;
+    double progressValue = 0.0;
+    final now = DateTime.now();
+    final totalSeconds = data.endTime!.difference(data.startTime!).inSeconds;
+    final elapsedSeconds = now.difference(data.startTime!).inSeconds;
+
+    if (totalSeconds > 0) {
+      progressValue = (elapsedSeconds / totalSeconds).clamp(0.0, 1.0);
+    } else if (elapsedSeconds >= 0) {
+      progressValue = 1.0;
+    }
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: LinearProgressIndicator(
+        value: progressValue,
+        backgroundColor: color.withOpacity(0.1),
+        valueColor: AlwaysStoppedAnimation<Color>(color),
+        minHeight: 4, // 6 -> 4
+      ),
+    );
+  }
+
+  // --- Data Logic (変更なし) ---
+  _TicketData _buildTicketData(TicketMode currentMode) {
+    switch (currentMode) {
+      case TicketMode.stay: return _buildStayData();
+      case TicketMode.move: return _buildMoveData();
+      default: return _buildSummaryData();
+    }
+  }
+
+  _TicketData _buildSummaryData() {
+    final from = fromLocation ?? 'Home';
+    final to = toLocation ?? trip.title;
+    final fromCode = _toCode(from, countryCode: fromCountryCode);
+    final toCode = _toCode(to, countryCode: toCountryCode);
+    final days = trip.endDate.difference(trip.startDate).inDays + 1;
+    final dateRange = '${DateFormat('MMM dd').format(trip.startDate)} - ${DateFormat('MMM dd').format(trip.endDate)}';
+
+    return _TicketData(
+      headerTitle: 'BOARDING PASS',
+      bgIcon: Icons.map_rounded,
+      mainLeftText: fromCode,
+      centerIcon: Icons.flight_takeoff_rounded,
+      centerText: '$days Days',
+      mainRightText: toCode,
+      subInfoText: dateRange,
+      statusChipText: 'Planned',
+      footerLeftLabel: 'DURATION', footerLeft: '$days Days',
+      footerCenterLabel: 'MEMBERS', footerCenter: 'Any',
+      footerRightLabel: 'TOTAL', footerRight: '--',
+    );
+  }
+
+  _TicketData _buildStayData() {
+    final item = currentStay!;
+    final category = item.category;
+
+    String header = 'VOUCHER';
+    if (category == ItemCategory.accommodation) header = 'HOTEL VOUCHER';
+    else if (category == ItemCategory.food) header = 'DINING TICKET';
+    else if (category == ItemCategory.sightseeing) header = 'ENTRY TICKET';
+    else header = '${category.displayName.toUpperCase()} PASS';
+
+    final startStr = DateFormat('HH:mm').format(item.time);
+    final end = item.time.add(Duration(minutes: item.durationMinutes ?? 60));
+    final endStr = DateFormat('HH:mm').format(end);
+
+    return _TicketData(
+      headerTitle: header,
+      bgIcon: category.icon,
+      mainLeftWidget: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6), // 8 -> 6
+            decoration: BoxDecoration(
+              color: AppColors.third.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(category.icon, size: 24, color: AppColors.third), // 28 -> 24
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              item.name,
+              style: AppTextStyles.h3.copyWith(fontSize: 18, height: 1.1), // 22 -> 18
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      mainRightText: null,
+      subInfoText: '$startStr - $endStr',
+      statusChipText: 'Confirmed',
+      footerLeftLabel: 'COST', footerLeft: _formatCost(item.cost),
+      footerCenterLabel: 'NOTES', footerCenter: (item.notes?.isNotEmpty ?? false) ? 'Ref Check' : '--',
+      footerRightLabel: 'STATUS', footerRight: 'On Stay',
+      showProgress: true, startTime: item.time, endTime: end,
+    );
+  }
+
+  _TicketData _buildMoveData() {
+    final item = currentMove!;
+    final destination = nextDestinationName ?? 'Dest';
+    final transport = item.transportType;
     
-    // 現在時刻と経過時間
+    String header = 'TICKET';
+    switch (transport) {
+      case TransportType.plane: header = 'BOARDING PASS'; break;
+      case TransportType.train: header = 'TRAIN TICKET'; break;
+      case TransportType.bus: header = 'BUS TICKET'; break;
+      case TransportType.waiting: header = 'TRANSIT WAIT'; break;
+      default: header = 'TRANSIT TICKET';
+    }
+
+    StepDetail? activeStep;
     final now = DateTime.now();
     final elapsedMinutes = now.difference(item.time).inMinutes;
 
@@ -259,300 +518,232 @@ class SmartTicket extends StatelessWidget {
       activeStep ??= item.detailedSteps.last;
     }
 
-    // 表示する変数
-    IconData icon;
-    String labelText; // 上の小さい文字 (全体の文脈)
-    String mainText;  // 真ん中の大きい文字 (今の乗り物)
-    String subText;   // 下の文字 (区間など)
-    String? seatInfo; // 座席情報など
-
-    if (activeStep != null) {
-      // --- A. StepDetailがある場合 (詳細モード) ---
-      icon = activeStep.transportType.icon;
-      
-      // Label: 全体の目的地を表示して「RouteItemの全貌」を示す
-      labelText = 'BOUND FOR ${destination.toUpperCase()}';
-
-      // Main: 路線名があればそれを、なければ手段名
-      if (activeStep.lineName != null && activeStep.lineName!.isNotEmpty) {
-        mainText = activeStep.lineName!;
-      } else {
-        mainText = activeStep.transportType.displayName;
-      }
-
-      // Sub: 区間情報
-      if (activeStep.departureStation != null && activeStep.arrivalStation != null) {
-        subText = '${activeStep.departureStation} ➔ ${activeStep.arrivalStation}';
-      } else {
-        subText = activeStep.displayInstruction;
-      }
-
-      // Seat: 座席情報などがあれば取得
-      seatInfo = activeStep.bookingDetails; // "Seat 12A" とか "Car 5" とか
-
-    } else {
-      // --- B. StepDetailがない場合 (既存のフォールバック) ---
-      icon = item.transportType.icon;
-      
-      labelText = 'MOVING (${item.transportType.displayName.toUpperCase()})';
-      mainText = 'To $destination';
-      subText = 'On the way'; // あるいはCostとか、空文字でもOK
-      seatInfo = null;
-    }
-
-    return Row(
-      children: [
-        // アイコン部分
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: color, size: 24),
-        ),
-        const SizedBox(width: 16),
-        
-        // テキスト情報部分
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
+    DateTime startTime = item.time;
+    DateTime endTime = item.time.add(Duration(minutes: item.durationMinutes));
+    
+    if (activeStep != null && (activeStep.transportType == TransportType.waiting || 
+       (activeStep.departureStation == null && activeStep.customInstruction != null))) {
+       
+       return _TicketData(
+          headerTitle: header,
+          bgIcon: activeStep.transportType.icon,
+          mainLeftWidget: Row(
             children: [
-              // 1. ラベル (全体の文脈)
-              Text(
-                labelText,
-                style: AppTextStyles.label.copyWith(
-                  color: color, 
-                  fontWeight: FontWeight.bold, 
-                  fontSize: 9, 
-                  letterSpacing: 1.0
+              Icon(activeStep.transportType.icon, size: 28, color: AppColors.textPrimary), // 32 -> 28
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  activeStep.customInstruction ?? activeStep.transportType.displayName,
+                  style: AppTextStyles.h3.copyWith(fontSize: 18), // 20 -> 18
+                  maxLines: 2, overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 2),
-              
-              // 2. メイン (今の乗り物 / 目的地)
-              Text(
-                mainText,
-                style: AppTextStyles.h3.copyWith(fontSize: 18),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              
-              // 3. サブ情報 (区間 + 座席)
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      subText,
-                      style: AppTextStyles.label,
-                      maxLines: 1, 
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  // 座席情報があればバッジっぽく表示
-                  if (seatInfo != null && seatInfo.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.textSecondary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: AppColors.textSecondary.withOpacity(0.2)),
-                      ),
-                      child: Text(
-                        seatInfo,
-                        style: AppTextStyles.label.copyWith(
-                          fontSize: 10, 
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.bold
-                        ),
-                      ),
-                    ),
-                  ]
-                ],
               ),
             ],
           ),
-        ),
-      ],
+          mainRightText: null,
+          subInfoText: '${activeStep.durationMinutes} min',
+          statusChipText: 'Active',
+          footerLeftLabel: 'FOR', footerLeft: destination.toUpperCase(),
+          footerCenterLabel: 'INFO', footerCenter: '--',
+          footerRightLabel: 'COST', footerRight: _formatCost(item.cost),
+          showProgress: true, startTime: startTime, endTime: endTime,
+        );
+    }
+
+    String leftText, rightText;
+    IconData centerIcon;
+    String centerText;
+    String seatInfo = '--';
+
+    if (activeStep != null) {
+      leftText = activeStep.departureStation ?? 'Start';
+      rightText = activeStep.arrivalStation ?? 'End';
+      centerIcon = activeStep.transportType.icon;
+      centerText = activeStep.lineName ?? activeStep.transportType.displayName;
+      seatInfo = activeStep.bookingDetails ?? '--';
+    } else {
+      leftText = fromLocation ?? 'Start';
+      rightText = toLocation ?? 'End';
+      centerIcon = transport.icon;
+      centerText = transport.displayName;
+    }
+
+    return _TicketData(
+      headerTitle: header,
+      bgIcon: centerIcon,
+      mainLeftText: leftText,
+      centerIcon: centerIcon,
+      centerText: centerText,
+      mainRightText: rightText,
+      subInfoText: '${DateFormat('HH:mm').format(startTime)} - ${DateFormat('HH:mm').format(endTime)}',
+      statusChipText: transport.displayName,
+      footerLeftLabel: 'FOR', footerLeft: destination.toUpperCase(),
+      footerCenterLabel: 'SEAT', footerCenter: seatInfo,
+      footerRightLabel: 'COST', footerRight: _formatCost(item.cost),
+      showProgress: true, startTime: startTime, endTime: endTime,
     );
   }
 
-  Widget _buildSubContent(TicketMode targetMode, Color color) {
+  // --- Helpers ---
+  Color _getModeColor(TicketMode targetMode) {
     switch (targetMode) {
-      case TicketMode.stay:
-      case TicketMode.move:
-        return _buildProgress(color, targetMode);
-      case TicketMode.summary:
-      default:
-        return _buildSummarySub();
+      case TicketMode.stay: return AppColors.third;
+      case TicketMode.move: return AppColors.accent;
+      default: return AppColors.primary;
     }
   }
 
-  // ... ( _buildSummarySub は変更なし ) ...
-  Widget _buildSummarySub() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        _buildLabelValue('DATE', DateFormat('MM/dd').format(trip.startDate)),
-        _buildLabelValue('GATE', 'E4'), // ダミー
-        _buildLabelValue('SEAT', '12A'), // ダミー
-        
-        Padding(
-          padding: const EdgeInsets.only(bottom: 2),
-          child: _buildBarcode(),
-        ),
-      ],
+  String _toCode(String name, {String? countryCode}) {
+    if (name.isEmpty) return '???';
+    final lowerName = name.toLowerCase();
+    if (cityCodes.containsKey(lowerName)) return cityCodes[lowerName]!;
+    for (final key in cityCodes.keys) {
+      if (lowerName.contains(key)) return cityCodes[key]!;
+    }
+    if (countryCode != null && countryCode.isNotEmpty) {
+      return (CountryConverter.toAlpha3(countryCode) ?? countryCode).toUpperCase();
+    }
+    final sanitized = name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    if (sanitized.length >= 3) return sanitized.substring(0, 3).toUpperCase();
+    return 'DST';
+  }
+  
+  String _formatCost(double? cost) {
+    if (cost == null) return '--';
+    final format = NumberFormat("#,###");
+    return '¥${format.format(cost)}';
+  }
+}
+
+// --- Custom Clipper (調整済み) ---
+class TicketClipper extends CustomClipper<Path> {
+  final double holeRadius;
+  final double holePositionRatio;
+
+  TicketClipper({this.holeRadius = 8, this.holePositionRatio = 0.65});
+
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    final holeY = size.height * holePositionRatio;
+
+    path.moveTo(0, 0);
+    path.lineTo(size.width, 0);
+    path.lineTo(size.width, holeY - holeRadius);
+    
+    path.arcToPoint(
+      Offset(size.width, holeY + holeRadius),
+      radius: Radius.circular(holeRadius),
+      clockwise: false,
+    );
+    
+    path.lineTo(size.width, size.height);
+    path.lineTo(0, size.height);
+    path.lineTo(0, holeY + holeRadius);
+
+    path.arcToPoint(
+      Offset(0, holeY - holeRadius),
+      radius: Radius.circular(holeRadius),
+      clockwise: false,
+    );
+
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(TicketClipper oldClipper) => true;
+}
+
+// --- Barcode Widget (CustomPainter版: クッキリ描画) ---
+class BarcodeWidget extends StatelessWidget {
+  final double height;
+  final double width;
+
+  const BarcodeWidget({super.key, required this.height, required this.width});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size(width, height),
+      painter: _BarcodePainter(),
     );
   }
+}
 
-  // 👇 ★ここを改修: Progress Barを動くように変更
-  Widget _buildProgress(Color color, TicketMode targetMode) {
-    DateTime? start;
-    DateTime? end;
-    
-    if (targetMode == TicketMode.stay && currentStay != null) {
-      start = currentStay!.time;
-      final duration = currentStay!.durationMinutes ?? 60;
-      end = start.add(Duration(minutes: duration));
-    } else if (targetMode == TicketMode.move && currentMove != null) {
-      start = currentMove!.time;
-      final duration = currentMove!.durationMinutes;
-      end = start.add(Duration(minutes: duration));
-    }
+class _BarcodePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.grey[800]!
+      ..strokeWidth = 1.0;
 
-    final startStr = start != null ? DateFormat('HH:mm').format(start) : '--:--';
-    final endStr = end != null ? DateFormat('HH:mm').format(end) : '--:--';
+    final random = math.Random(42); // シード固定で毎回同じ模様にする
+    double currentX = 0;
 
-    // プログレス計算
-    double progressValue = 0.0;
-    if (start != null && end != null) {
-      final now = DateTime.now();
-      final totalSeconds = end.difference(start).inSeconds;
-      final elapsedSeconds = now.difference(start).inSeconds;
+    while (currentX < size.width) {
+      // 線の太さをランダムに (1.0 〜 3.0)
+      final strokeWidth = random.nextDouble() * 4.0 + 1.0;
+      paint.strokeWidth = strokeWidth;
 
-      if (totalSeconds > 0) {
-        progressValue = (elapsedSeconds / totalSeconds).clamp(0.0, 1.0);
-      } else if (elapsedSeconds >= 0) {
-        progressValue = 1.0; // 期間0で過ぎていれば100%
+      // 描画するかスキップするか (密度調整: 60%の確率で描画)
+      if (random.nextDouble() > 0.1) {
+        canvas.drawLine(
+          Offset(currentX, 0),
+          Offset(currentX, size.height),
+          paint,
+        );
       }
-    }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(startStr, style: AppTextStyles.label.copyWith(fontSize: 12)),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                targetMode == TicketMode.stay ? 'On Stay' : 'On Move',
-                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-              ),
-            ),
-            Text(endStr, style: AppTextStyles.label.copyWith(fontSize: 12)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: progressValue, // 👈 計算した値をセット
-            backgroundColor: Colors.grey[200],
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-            minHeight: 4,
-          ),
-        ),
-      ],
-    );
+      // 次の線までの間隔 (1.5 〜 4.0)
+      currentX += strokeWidth + random.nextDouble() * 2.5 + 1.5;
+    }
   }
 
-  // ... ( _buildCode, _buildLabelValue, _buildDivider, _buildNotch, _buildBarcode, ヘルパーメソッドは変更なし ) ...
-  // (これらは元のコードをそのまま維持してください)
-  Widget _buildCode(String code, String city) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(code, style: AppTextStyles.ticketCode.copyWith(fontSize: 28)),
-          Text(
-            city.length > 10 ? '${city.substring(0, 10)}...' : city, // 長すぎる場合は省略
-            style: AppTextStyles.label.copyWith(fontSize: 10)
-          ), 
-        ],
-      );
-    }
-  
-    Widget _buildLabelValue(String label, String value) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: AppTextStyles.label.copyWith(fontSize: 9, color: Colors.grey)),
-          Text(value, style: AppTextStyles.h3.copyWith(fontSize: 14)),
-        ],
-      );
-    }
-    
-    Widget _buildDivider() {
-      return SizedBox(
-        height: 16,
-        child: Stack(
-          children: [
-            Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return Flex(
-                    direction: Axis.horizontal,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: List.generate(
-                      (constraints.constrainWidth() / 8).floor(),
-                      (index) => SizedBox(
-                        width: 4, height: 1,
-                        child: DecoratedBox(decoration: BoxDecoration(color: Colors.grey[300])),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            Positioned(left: -8, top: 0, bottom: 0, child: _buildNotch()),
-            Positioned(right: -8, top: 0, bottom: 0, child: _buildNotch()),
-          ],
-        ),
-      );
-    }
-  
-    Widget _buildNotch() {
-      return Container(
-        width: 16,
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          shape: BoxShape.circle,
-        ),
-      );
-    }
-  
-    Widget _buildBarcode() {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(12, (index) {
-          final width = (index % 4 == 0) ? 3.0 : (index % 3 == 0 ? 1.0 : 2.0);
-          return Container(
-            margin: const EdgeInsets.only(right: 2),
-            width: width,
-            height: 28,
-            color: AppColors.textPrimary.withValues(alpha: 0.2),
-          );
-        }),
-      );
-    }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _TicketData {
+  final String headerTitle;
+  final IconData bgIcon;
+  final String? mainLeftText;
+  final Widget? mainLeftWidget;
+  final IconData? centerIcon;
+  final String? centerText;
+  final String? mainRightText;
+  final Widget? mainRightWidget;
+  final String? subInfoText;
+  final String? statusChipText;
+  final String footerLeftLabel;
+  final String footerLeft;
+  final String footerCenterLabel;
+  final String footerCenter;
+  final String footerRightLabel;
+  final String footerRight;
+  final bool showProgress;
+  final DateTime? startTime;
+  final DateTime? endTime;
+
+  _TicketData({
+    required this.headerTitle,
+    required this.bgIcon,
+    this.mainLeftText,
+    this.mainLeftWidget,
+    this.centerIcon,
+    this.centerText,
+    this.mainRightText,
+    this.mainRightWidget,
+    this.subInfoText,
+    this.statusChipText,
+    required this.footerLeftLabel,
+    required this.footerLeft,
+    required this.footerCenterLabel,
+    required this.footerCenter,
+    required this.footerRightLabel,
+    required this.footerRight,
+    this.showProgress = false,
+    this.startTime,
+    this.endTime,
+  });
 }

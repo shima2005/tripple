@@ -51,6 +51,7 @@ enum TransportType {
   ferry,      // 船
   bicycle,    // 自転車
   transit,
+  waiting,
   other;
 }
 
@@ -69,6 +70,7 @@ extension TransportTypeExtension on TransportType {
       case TransportType.ferry: return 'フェリー';
       case TransportType.bicycle: return '自転車';
       case TransportType.transit: return '公共交通機関';
+      case TransportType.waiting: return '待機/待ち合わせ';
       case TransportType.other: return 'その他';
     }
   }
@@ -86,6 +88,7 @@ extension TransportTypeExtension on TransportType {
       case TransportType.ferry: return Icons.directions_boat_rounded;
       case TransportType.bicycle: return Icons.pedal_bike_rounded;
       case TransportType.transit: return Icons.commute_rounded;
+      case TransportType.waiting: return Icons.hourglass_top_rounded;
       case TransportType.other: return Icons.commute_rounded;
     }
   }
@@ -103,6 +106,7 @@ extension TransportTypeExtension on TransportType {
       case TransportType.ferry: return "🚢";
       case TransportType.bicycle: return "🚴";
       case TransportType.transit: return "🚃";
+      case TransportType.waiting: return "⌛";
       case TransportType.other: return "🚃";
     }
   }

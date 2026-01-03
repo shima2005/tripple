@@ -428,6 +428,7 @@ class _StepEditorSheetState extends State<_StepEditorSheet> {
  @override
   Widget build(BuildContext context) {
     // 内部変数計算
+    final isWaiting = _selectedType == TransportType.waiting;
     final isWalk = _selectedType == TransportType.walk || _selectedType == TransportType.bicycle;
     final isPublic = _selectedType == TransportType.train || _selectedType == TransportType.bus || _selectedType == TransportType.subway || _selectedType == TransportType.shinkansen || _selectedType == TransportType.plane;
     final duration = int.tryParse(_durationController.text) ?? 0;
@@ -491,29 +492,42 @@ class _StepEditorSheetState extends State<_StepEditorSheet> {
             ),
           ),
           const SizedBox(height: 24),
-          Row(
-            children: [
-              if (!isWalk) ...[
-                Expanded(child: TrippleTextField(controller: _depController, label: 'From', hintText: 'Station')),
+          if(isWaiting) ...[
+              Expanded(child: TrippleTextField(controller: _depController, label: 'Waiting At', hintText: 'Station')),
+              const SizedBox(height: 24),
+              Row(
+              children: [
+                Expanded(child: TrippleTextField(controller: _costController, label: 'Cost (¥)', hintText: '0', keyboardType: TextInputType.number)),
                 const SizedBox(width: 16),
+                Expanded(child: TrippleTextField(controller: _durationController, label: 'Min', hintText: '10', keyboardType: TextInputType.number, onChanged: (_) => setState((){}))),
               ],
-              Expanded(child: TrippleTextField(controller: _arrController, label: 'To', hintText: 'Destination')),
-            ],
-          ),
-          const SizedBox(height: 24),
-          if (isPublic) ...[
-            TrippleTextField(controller: _lineController, label: 'Details', hintText: 'Line Name'),
-            const SizedBox(height: 12),
-            TrippleTextField(controller: _detailController, hintText: 'Booking', label: null),
+            ),
+          ]
+          else ...[
+            Row(
+              children: [
+                if (!isWalk) ...[
+                  Expanded(child: TrippleTextField(controller: _depController, label: 'From', hintText: 'Station')),
+                  const SizedBox(width: 16),
+                ],
+                Expanded(child: TrippleTextField(controller: _arrController, label: 'To', hintText: 'Destination')),
+              ],
+            ),
             const SizedBox(height: 24),
-          ],
-          Row(
-            children: [
-              Expanded(child: TrippleTextField(controller: _costController, label: 'Cost (¥)', hintText: '0', keyboardType: TextInputType.number)),
-              const SizedBox(width: 16),
-              Expanded(child: TrippleTextField(controller: _durationController, label: 'Min', hintText: '10', keyboardType: TextInputType.number, onChanged: (_) => setState((){}))),
+            if (isPublic) ...[
+              TrippleTextField(controller: _lineController, label: 'Details', hintText: 'Line Name'),
+              const SizedBox(height: 12),
+              TrippleTextField(controller: _detailController, hintText: 'Booking', label: null),
+              const SizedBox(height: 24),
             ],
-          ),
+            Row(
+              children: [
+                Expanded(child: TrippleTextField(controller: _costController, label: 'Cost (¥)', hintText: '0', keyboardType: TextInputType.number)),
+                const SizedBox(width: 16),
+                Expanded(child: TrippleTextField(controller: _durationController, label: 'Min', hintText: '10', keyboardType: TextInputType.number, onChanged: (_) => setState((){}))),
+              ],
+            ),
+          ]
         ],
       ),
     );

@@ -74,8 +74,16 @@ class _TimelineViewState extends State<TimelineView> {
   }
 
   // 👇 現在時刻に基づいて「今の予定」または「次の予定」を探すロジック
-  ({ScheduledItem? stay, RouteItem? move, String? nextName}) _getCurrentTicketData(List<dynamic> items) {
-    if (items.isEmpty) return (stay: null, move: null, nextName: null);
+  ({
+    ScheduledItem? stay, 
+    RouteItem? move, 
+    String? nextName, // これは最終目的地やBoundFor用
+    String? fromName, // 追加: 直前の場所名 (Move用)
+    String? toName    // 追加: 直後の場所名 (Move用)
+  }) _getCurrentTicketData(List<dynamic> items, String defaultHome, String defaultDest) {
+    if (items.isEmpty) {
+      return (stay: null, move: null, nextName: null, fromName: null, toName: null);
+    }
 
     // 1. 現在進行中の予定を探す
     for (int i = 0; i < items.length; i++) {
@@ -84,14 +92,13 @@ class _TimelineViewState extends State<TimelineView> {
       DateTime? end;
 
       if (item is ScheduledItem) {
+        // ... (滞在中のロジックは変更なし)
         start = item.time;
-        // 滞在時間が未定ならとりあえず1時間とみなす（または次の予定開始まで）
         final duration = item.durationMinutes ?? 60; 
         end = start.add(Duration(minutes: duration));
         
-        // 今がこの滞在期間中ならビンゴ
         if (_now.isAfter(start) && _now.isBefore(end)) {
-          return (stay: item, move: null, nextName: null);
+          return (stay: item, move: null, nextName: null, fromName: null, toName: null);
         }
 
       } else if (item is RouteItem) {
@@ -99,15 +106,37 @@ class _TimelineViewState extends State<TimelineView> {
         final duration = item.durationMinutes;
         end = start.add(Duration(minutes: duration));
 
-        // 今が移動中ならビンゴ
+        // ★ 移動中なら前後を探す！
         if (_now.isAfter(start) && _now.isBefore(end)) {
-          // 移動中の場合、次の目的地の名前が知りたい
-          String? nextName;
-          if (i + 1 < items.length) {
-            final nextItem = items[i + 1];
-            if (nextItem is ScheduledItem) nextName = nextItem.name;
+          // 前の場所 (fromName)
+          String? fromName = defaultHome;
+          for (int k = i - 1; k >= 0; k--) {
+            if (items[k] is ScheduledItem) {
+              fromName = items[k].name;
+              break;
+            }
           }
-          return (stay: null, move: item, nextName: nextName);
+
+          // 次の場所 (toName)
+          String? toName = defaultDest; // デフォルトは旅の目的地
+          for (int k = i + 1; k < items.length; k++) {
+            if (items[k] is ScheduledItem) {
+              toName = items[k].name;
+              break;
+            }
+          }
+
+          // nextName (Bound For) は toName と同じか、あるいは旅の最終目的地にするか
+          // ここでは「直近の目的地」を toName、「全体の文脈」を nextName としても良いが
+          // 以前のロジックに合わせて nextName に toName を入れる、または trip.title を入れる
+          
+          return (
+            stay: null, 
+            move: item, 
+            nextName: defaultDest, // Bound For は全体の目的地を表示
+            fromName: fromName, 
+            toName: toName
+          );
         }
       }
     }
@@ -124,20 +153,20 @@ class _TimelineViewState extends State<TimelineView> {
       if (start.isAfter(_now)) {
         // これが「次の予定」
         if (item is ScheduledItem) {
-          return (stay: item, move: null, nextName: null);
+          return (stay: item, move: null, nextName: null, fromName: null, toName: null);
         } else if (item is RouteItem) {
            String? nextName;
            if (i + 1 < items.length) {
              final nextItem = items[i + 1];
              if (nextItem is ScheduledItem) nextName = nextItem.name;
            }
-           return (stay: null, move: item, nextName: nextName);
+           return (stay: null, move: item, nextName: nextName, fromName: null, toName: null);
         }
       }
     }
 
     // 3. 全部終わってる、あるいはまだ始まってない（遠い未来）などはSummary表示
-    return (stay: null, move: null, nextName: null);
+    return (stay: null, move: null, nextName: null, fromName: null, toName: null);
   }
 
   @override
@@ -180,7 +209,13 @@ class _TimelineViewState extends State<TimelineView> {
           }
 
           // 👇 ここで計算実行！
-          final currentTicketData = _getCurrentTicketData(state.scheduleItems);
+          
+          // 👇 メソッド呼び出し時にデフォルト値を渡す
+          final currentTicketData = _getCurrentTicketData(
+            state.scheduleItems, 
+            homeTown ?? "HOME", 
+            destinationName
+          );
 
           return Scaffold(
             backgroundColor: AppColors.background,
@@ -257,16 +292,31 @@ class _TimelineViewState extends State<TimelineView> {
                                 padding: const EdgeInsets.symmetric(horizontal: 4),
                                 child: SmartTicket(
                                   trip: currentTrip, 
-                                  // mode は指定せず自動判定に任せる
-                                  fromLocation: homeTown,
+                                  // Summary表示用のデフォルト値 (Summaryモード時に使用)
                                   fromCountryCode: homeCountryCode,
-                                  toLocation: destinationName,
                                   toCountryCode: destinationCountryCode,
                                   
-                                  // 👇 割り出した「今の予定」を渡す
+                                  // 👇 判定されたデータを渡す
                                   currentStay: currentTicketData.stay,
                                   currentMove: currentTicketData.move,
                                   nextDestinationName: currentTicketData.nextName,
+                                  
+                                  // ★ ここが重要！Moveモード(Pattern 2)で使う場所名
+                                  // moveがある時だけ、計算した from/to を優先させるロジックを SmartTicket 内に書くか、
+                                  // ここで条件分岐して渡す。SmartTicketの引数に合わせた形にする。
+                                  // SmartTicket側で「currentMoveがあるならfromLocation/toLocationを使う」となっていれば
+                                  // ここで上書きして渡せばOK
+                                  
+                                  // 引数名が被っているので、SmartTicket側が
+                                  // 「Moveモード時は fromLocation / toLocation を "A地点→B地点" として使う」
+                                  // という設計なら、ここで上書きする。
+                                  fromLocation: currentTicketData.move != null 
+                                      ? currentTicketData.fromName 
+                                      : homeTown,
+                                      
+                                  toLocation: currentTicketData.move != null 
+                                      ? currentTicketData.toName 
+                                      : destinationName,
                                 ),
                               ),
                               const SizedBox(height: 24),
