@@ -4,6 +4,8 @@ import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:new_tripple/core/theme/app_colors.dart';
+import 'package:flutter/services.dart';
+import 'package:new_tripple/models/ios_live_activity_state.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -195,5 +197,37 @@ class NotificationService {
       body,
       const NotificationDetails(android: androidDetails, iOS: DarwinNotificationDetails()),
     );
+  }
+
+  // ----------------------------------------------------------------
+  // 🍎 iOS Live Activity (Dynamic Island) 連携
+  // ----------------------------------------------------------------
+
+  // iOS側 (AppDelegate / Swift) と通信するためのチャンネル
+  // ※このチャンネル名は、後で書く Swift コードと一致させる必要があります
+  static const MethodChannel _iosChannel = MethodChannel('com.example.tripple/live_activity');
+
+  /// Live Activity を開始または更新する
+  Future<void> updateLiveActivity(IosLiveActivityState state) async {
+    // iOS以外では何もしない
+    if (!Platform.isIOS) return;
+
+    try {
+      // Swift側の 'updateLiveActivity' メソッドを呼び出し、Mapデータを渡す
+      await _iosChannel.invokeMethod('updateLiveActivity', state.toMap());
+    } catch (e) {
+      print("🔥 Failed to update Live Activity: $e");
+    }
+  }
+
+  /// Live Activity を終了する
+  Future<void> endLiveActivity() async {
+    if (!Platform.isIOS) return;
+
+    try {
+      await _iosChannel.invokeMethod('endLiveActivity');
+    } catch (e) {
+      print("🔥 Failed to end Live Activity: $e");
+    }
   }
 }

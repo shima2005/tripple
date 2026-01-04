@@ -36,6 +36,25 @@ extension ItemCategoryExtension on ItemCategory {
       case ItemCategory.other: return Icons.place_rounded;
     }
   }
+
+  String get iconName{
+    switch (this) {
+      case ItemCategory.sightseeing: 
+        return 'camera.fill';
+      case ItemCategory.food: 
+        return 'fork.knife';
+      case ItemCategory.accommodation: 
+        return 'bed.double.fill';
+      case ItemCategory.shopping: 
+        return 'bag.fill';
+      case ItemCategory.leisure: 
+        return 'figure.hiking';
+      case ItemCategory.transport: 
+        return 'building.columns.fill'; 
+      case ItemCategory.other: 
+      return 'mappin.and.ellipse';
+    }
+  }
 }
 
 /// 移動（RouteItem）の手段 - 大幅拡充！
@@ -108,6 +127,37 @@ extension TransportTypeExtension on TransportType {
       case TransportType.transit: return "🚃";
       case TransportType.waiting: return "⌛";
       case TransportType.other: return "🚃";
+    }
+  }
+
+  String get iconName{
+    switch (this) {
+      case TransportType.walk: 
+        return 'figure.walk';
+      case TransportType.train: 
+        return 'tram.fill'; // 通常の電車
+      case TransportType.bus: 
+        return 'bus.fill';
+      case TransportType.subway: 
+        return 'tram.tunnel.fill'; // 地下鉄
+      case TransportType.shinkansen: 
+        return 'train.side.front.car'; // 新幹線・特急（流線型）
+      case TransportType.car: 
+        return 'car.fill';
+      case TransportType.taxi: 
+        return 'car.front.waves.up'; // タクシー（配車イメージ）
+      case TransportType.plane: 
+        return 'airplane';
+      case TransportType.ferry: 
+        return 'ferry.fill';
+      case TransportType.bicycle: 
+        return 'bicycle';
+      case TransportType.transit: 
+        return 'arrow.triangle.2.circlepath'; // 乗り換え・経由
+      case TransportType.waiting: 
+        return 'hourglass'; // 待機
+      case TransportType.other: 
+        return 'arrow.right.circle.fill';
     }
   }
 }

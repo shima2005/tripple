@@ -502,25 +502,43 @@ class SmartTicket extends StatelessWidget {
       default: header = 'TRANSIT TICKET';
     }
 
+    // ★ 修正: Active Step とその正確な開始・終了時刻を計算
     StepDetail? activeStep;
-    final now = DateTime.now();
-    final elapsedMinutes = now.difference(item.time).inMinutes;
+    DateTime stepStartTime = item.time; // デフォルトは全体の開始
+    DateTime stepEndTime = item.time.add(Duration(minutes: item.durationMinutes)); // デフォルトは全体の終了
 
-    if (item.detailedSteps.isNotEmpty && elapsedMinutes >= 0) {
-      int cumulative = 0;
+    final now = DateTime.now();
+
+    if (item.detailedSteps.isNotEmpty) {
+      DateTime cursorTime = item.time;
+      bool found = false;
+      
       for (final step in item.detailedSteps) {
-        cumulative += step.durationMinutes;
-        if (elapsedMinutes < cumulative) {
+        final endCursor = cursorTime.add(Duration(minutes: step.durationMinutes));
+        
+        // 現在時刻がこのステップの終了前なら、これがActive
+        if (now.isBefore(endCursor)) {
           activeStep = step;
+          stepStartTime = cursorTime;
+          stepEndTime = endCursor;
+          found = true;
           break;
         }
+        cursorTime = endCursor;
       }
-      activeStep ??= item.detailedSteps.last;
+      
+      // 全て終わっている場合は最後のステップを表示
+      if (!found) {
+        activeStep = item.detailedSteps.last;
+        stepStartTime = cursorTime.subtract(Duration(minutes: activeStep.durationMinutes));
+        stepEndTime = cursorTime;
+      }
     }
 
-    DateTime startTime = item.time;
-    DateTime endTime = item.time.add(Duration(minutes: item.durationMinutes));
+    // 表示用時刻文字列 (HH:mm - HH:mm)
+    final timeRangeStr = '${DateFormat('HH:mm').format(stepStartTime)} - ${DateFormat('HH:mm').format(stepEndTime)}';
     
+    // --- Pattern 3: Instruction / Wait ---
     if (activeStep != null && (activeStep.transportType == TransportType.waiting || 
        (activeStep.departureStation == null && activeStep.customInstruction != null))) {
        
@@ -529,39 +547,43 @@ class SmartTicket extends StatelessWidget {
           bgIcon: activeStep.transportType.icon,
           mainLeftWidget: Row(
             children: [
-              Icon(activeStep.transportType.icon, size: 28, color: AppColors.textPrimary), // 32 -> 28
+              Icon(activeStep.transportType.icon, size: 28, color: AppColors.textPrimary),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   activeStep.customInstruction ?? activeStep.transportType.displayName,
-                  style: AppTextStyles.h3.copyWith(fontSize: 18), // 20 -> 18
+                  style: AppTextStyles.h3.copyWith(fontSize: 18),
                   maxLines: 2, overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
           mainRightText: null,
-          subInfoText: '${activeStep.durationMinutes} min',
+          // ★ 修正: duration ("15 min") ではなく、計算した時間範囲を表示
+          subInfoText: timeRangeStr,
           statusChipText: 'Active',
           footerLeftLabel: 'FOR', footerLeft: destination.toUpperCase(),
           footerCenterLabel: 'INFO', footerCenter: '--',
           footerRightLabel: 'COST', footerRight: _formatCost(item.cost),
-          showProgress: true, startTime: startTime, endTime: endTime,
+          showProgress: true, startTime: stepStartTime, endTime: stepEndTime,
         );
     }
 
+    // --- Pattern 1 & 2 ---
     String leftText, rightText;
     IconData centerIcon;
     String centerText;
     String seatInfo = '--';
 
     if (activeStep != null) {
+      // Step詳細あり
       leftText = activeStep.departureStation ?? 'Start';
       rightText = activeStep.arrivalStation ?? 'End';
       centerIcon = activeStep.transportType.icon;
       centerText = activeStep.lineName ?? activeStep.transportType.displayName;
       seatInfo = activeStep.bookingDetails ?? '--';
     } else {
+      // Stepなし (全体表示)
       leftText = fromLocation ?? 'Start';
       rightText = toLocation ?? 'End';
       centerIcon = transport.icon;
@@ -575,12 +597,13 @@ class SmartTicket extends StatelessWidget {
       centerIcon: centerIcon,
       centerText: centerText,
       mainRightText: rightText,
-      subInfoText: '${DateFormat('HH:mm').format(startTime)} - ${DateFormat('HH:mm').format(endTime)}',
+      // ★ 修正: 計算した時間範囲を表示 (Stepがある場合はStepの時間、ない場合は全体の時間)
+      subInfoText: timeRangeStr,
       statusChipText: transport.displayName,
       footerLeftLabel: 'FOR', footerLeft: destination.toUpperCase(),
       footerCenterLabel: 'SEAT', footerCenter: seatInfo,
       footerRightLabel: 'COST', footerRight: _formatCost(item.cost),
-      showProgress: true, startTime: startTime, endTime: endTime,
+      showProgress: true, startTime: stepStartTime, endTime: stepEndTime,
     );
   }
 

@@ -1,11 +1,14 @@
+import 'dart:convert';
+import 'package:home_widget/home_widget.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:firebase_auth/firebase_auth.dart'; // 👈 認証用
+import 'package:new_tripple/models/ios_live_activity_state.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // 👈 設定読み込み用
 import 'package:latlong2/latlong.dart';
 import 'package:uuid/uuid.dart';
-
 import 'package:new_tripple/models/expense_item.dart';
 import 'package:new_tripple/models/step_detail.dart';
 import 'package:new_tripple/models/trip.dart';
@@ -319,7 +322,7 @@ class TripCubit extends Cubit<TripState> {
         _tripRepository.fetchExpenses(tripId),
       ]);
       
-      final items = results[0] as List<Object>;
+      final items = results[0];
       final expenses = results[1] as List<ExpenseItem>;
 
       emit(state.copyWith(
@@ -606,41 +609,6 @@ class TripCubit extends Cubit<TripState> {
   // 🔔 通知ロジック (RouteItem & StepDetail 対応版)
   // ==============================================================================
 
-  void syncNotifications(SettingsState settings) {
-    if (!settings.isNotificationEnabled || state.selectedTrip == null) {
-      _stopOngoingTimer();
-      NotificationService().cancelOngoingNotification();
-      return;
-    }
-
-    // 👇 修正: ScheduledItem だけでなく RouteItem も含める
-    // (scheduleItems は Object のリストなので、型チェックして抽出)
-    final allItems = <dynamic>[];
-    for (var item in state.scheduleItems) {
-      if (item is ScheduledItem || item is RouteItem) {
-        allItems.add(item);
-      }
-    }
-
-    // リマインダー予約
-    if (settings.isReminderEnabled) {
-      _scheduleReminders(allItems, settings.reminderMinutesBefore);
-    }
-
-    // 常時通知
-    if (settings.isOngoingNotificationEnabled) {
-      if (_ongoingTimer == null || !_ongoingTimer!.isActive) {
-        _updateOngoingNotification();
-        // 1分ごとに更新
-        _ongoingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-          _updateOngoingNotification();
-        });
-      }
-    } else {
-      _stopOngoingTimer();
-      NotificationService().cancelOngoingNotification();
-    }
-  }
 
   // 👇 修正: RouteItemも通知対象にする
   Future<void> _scheduleReminders(List<dynamic> items, int minutesBefore) async {
@@ -678,13 +646,89 @@ class TripCubit extends Cubit<TripState> {
       }
     }
   }
-
-
-  // 👇 移動中は「今のステップ」、滞在中は「次の予定」を出す賢い通知ロジック
-  Future<void> _updateOngoingNotification() async {
-    final trip = state.selectedTrip;
+  
+  // 👇 新規追加: Stateなしで設定を直接読んで通知をセットアップ
+  Future<void> _syncNotificationsWithoutState() async {
+    final prefs = await SharedPreferences.getInstance();
     
-    // ScheduledItem と RouteItem をマージ
+    final isNotifyEnabled = prefs.getBool('isNotificationEnabled') ?? false;
+    final isOngoingEnabled = prefs.getBool('isOngoingNotificationEnabled') ?? true;
+    final isReminderEnabled = prefs.getBool('isReminderEnabled') ?? true;
+    final minutes = prefs.getInt('reminderMinutesBefore') ?? 15;
+
+    final dummySettings = SettingsState(
+      isNotificationEnabled: isNotifyEnabled,
+      isOngoingNotificationEnabled: isOngoingEnabled,
+      isReminderEnabled: isReminderEnabled,
+      reminderMinutesBefore: minutes,
+    );
+
+    syncNotifications(dummySettings);
+  }
+
+  // 👇 新規追加: 起動時にアクティブな旅行を探して通知セット
+  Future<void> _checkAndSetupActiveTripNotification(List<Trip> trips) async {
+    final now = DateTime.now();
+    
+    Trip? activeTrip;
+    try {
+      activeTrip = trips.firstWhere((trip) {
+        final start = DateTime(trip.startDate.year, trip.startDate.month, trip.startDate.day);
+        final end = DateTime(trip.endDate.year, trip.endDate.month, trip.endDate.day, 23, 59, 59);
+        return now.isAfter(start) && now.isBefore(end);
+      });
+    } catch (_) {
+      activeTrip = null;
+    }
+
+    if (activeTrip != null) {
+      print('🚀 Active trip detected: ${activeTrip.title}');
+      try {
+        final scheduleItems = await _tripRepository.fetchFullSchedule(activeTrip.id);
+        
+        // 画面データとしてセットしておく (これで次回開いた時に早い)
+        emit(state.copyWith(
+          selectedTrip: activeTrip,
+          scheduleItems: scheduleItems,
+        ));
+
+        // 設定を読んで通知セット
+        await _syncNotificationsWithoutState();
+        
+      } catch (e) {
+        print('Background schedule fetch error: $e');
+      }
+    } else {
+      NotificationService().cancelOngoingNotification();
+    }
+  }
+
+
+  void _stopOngoingTimer() {
+    _ongoingTimer?.cancel();
+    _ongoingTimer = null;
+  }
+  
+  @override
+  Future<void> close() {
+    _stopOngoingTimer();
+    _authSubscription?.cancel();
+    return super.close();
+  }
+
+  // ==============================================================================
+  // 🔔 通知ロジック (RouteItem & StepDetail 対応版 - Refactored)
+  // ==============================================================================
+
+  void syncNotifications(SettingsState settings) {
+    if (!settings.isNotificationEnabled || state.selectedTrip == null) {
+      _stopOngoingTimer();
+      if (Platform.isAndroid) NotificationService().cancelOngoingNotification();
+      if (Platform.isIOS) NotificationService().endLiveActivity();
+      return;
+    }
+
+    // ScheduledItem と RouteItem を抽出（リマインダー用）
     final allItems = <dynamic>[];
     for (var item in state.scheduleItems) {
       if (item is ScheduledItem || item is RouteItem) {
@@ -692,43 +736,90 @@ class TripCubit extends Cubit<TripState> {
       }
     }
 
-    if (trip == null || allItems.isEmpty) return;
+    // リマインダー予約 (既存のロジックを利用)
+    if (settings.isReminderEnabled) {
+      _scheduleReminders(allItems, settings.reminderMinutesBefore);
+    }
+
+    // 常時通知 (Platform分岐対応)
+    if (settings.isOngoingNotificationEnabled) {
+      if (_ongoingTimer == null || !_ongoingTimer!.isActive) {
+        _onTick(); // 初回即時実行
+        // 1分ごとに更新
+        _ongoingTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+          _onTick();
+        });
+      }
+    } else {
+      _stopOngoingTimer();
+      if (Platform.isAndroid) NotificationService().cancelOngoingNotification();
+      if (Platform.isIOS) NotificationService().endLiveActivity();
+    }
+  }
+
+  // 1分ごとに呼ばれる軽量メソッド
+  Future<void> _onTick() async {
+    final status = _calculateCurrentStatus();
+    
+    // 予定なし or 旅行期間外なら消す
+    if (status == null) {
+        if (Platform.isAndroid) await NotificationService().cancelOngoingNotification();
+        if (Platform.isIOS) await NotificationService().endLiveActivity();
+        return;
+    }
+
+    // iOSとAndroidで処理を分岐
+    if (Platform.isAndroid) {
+      await _updateAndroidNotification(status);
+    } else if (Platform.isIOS) {
+      await _updateIosLiveActivity(status);
+    }
+
+    if (Platform.isIOS) {
+      await _updateIosLiveActivity(status);
+      await _updateHomeWidget(status); // 👈 追加！
+    } else if (Platform.isAndroid) {
+      await _updateAndroidNotification(status);
+      // Androidのウィジェットも作るならここで呼ぶ
+    }
+  }
+
+  // 共通計算ロジック: 現在地と次の予定を特定する
+  _TripStatusInfo? _calculateCurrentStatus() {
+    final trip = state.selectedTrip;
+    // ScheduledItem と RouteItem をマージしてソート
+    final allItems = <dynamic>[
+      ...state.scheduleItems.whereType<ScheduledItem>(),
+      ...state.scheduleItems.whereType<RouteItem>(),
+    ]..sort((a, b) {
+        final timeA = (a is ScheduledItem) ? a.time : (a as RouteItem).time;
+        final timeB = (b is ScheduledItem) ? b.time : (b as RouteItem).time;
+        return timeA.compareTo(timeB);
+      });
+
+    if (trip == null || allItems.isEmpty) return null;
 
     final now = DateTime.now();
-    // 旅行期間外ならスキップ
-    if (now.isBefore(trip.startDate) || now.isAfter(trip.endDate.add(const Duration(days: 1)))) return;
-
-    // 時間順にソート
-    allItems.sort((a, b) {
-      final timeA = (a is ScheduledItem) ? a.time : (a as RouteItem).time;
-      final timeB = (b is ScheduledItem) ? b.time : (b as RouteItem).time;
-      return timeA.compareTo(timeB);
-    });
-
-    String title = 'Travel Mode Active';
-    String body = 'No upcoming plans';
-    String plainTitle = 'Travel Mode Active';
-    String plainBody = 'No upcoming plans';
+    // 旅行期間外ならnullを返す（通知しない）
+    if (now.isBefore(trip.startDate) || now.isAfter(trip.endDate.add(const Duration(days: 1)))) return null;
 
     dynamic currentItem;
     dynamic nextItem;
 
-    // ■ 1. 現在地と次の予定を特定
+    // 現在地特定ロジック
     for (var i = 0; i < allItems.length; i++) {
       final item = allItems[i];
       DateTime startTime;
       int duration = 0;
-
+      
       if (item is ScheduledItem) {
         startTime = item.time;
         duration = item.durationMinutes ?? 60;
-      } else if (item is RouteItem) {
-        startTime = item.time;
-        duration = item.durationMinutes;
       } else {
-        continue;
+        startTime = (item as RouteItem).time;
+        duration = item.durationMinutes;
       }
-
+      
       final endTime = startTime.add(Duration(minutes: duration));
 
       // 今が期間内なら Current
@@ -745,7 +836,22 @@ class TripCubit extends Cubit<TripState> {
       }
     }
 
-    // ■ 2. 表示内容の生成 (ユーザー要望に合わせて分岐)
+    // どちらも見つからなければnull (全日程終了など)
+    if (currentItem == null && nextItem == null) return null;
+
+    return _TripStatusInfo(currentItem, nextItem, trip);
+  }
+
+  // Android用の通知ロジック (元のコードを移植)
+  Future<void> _updateAndroidNotification(_TripStatusInfo info) async {
+    final currentItem = info.currentItem;
+    final nextItem = info.nextItem;
+    final now = DateTime.now();
+
+    String title = 'Travel Mode Active';
+    String body = 'No upcoming plans';
+    String plainTitle = 'Travel Mode Active';
+    String plainBody = 'No upcoming plans';
 
     // A. 移動中 (RouteItem) の場合
     if (currentItem is RouteItem) {
@@ -777,7 +883,7 @@ class TripCubit extends Cubit<TripState> {
         int stepStartMin = 0; // そのステップがルート開始から何分後に始まるか
 
         for (var step in route.detailedSteps) {
-          final stepDuration = step.durationMinutes as int;
+          final stepDuration = step.durationMinutes;
           if (timeSinceStart < accumMinutes + stepDuration) {
             currentStep = step;
             stepStartMin = accumMinutes;
@@ -825,7 +931,7 @@ class TripCubit extends Cubit<TripState> {
 
         if (nextItem is RouteItem) {
            // 次が移動なら「Move to 〇〇」
-           final route = nextItem as RouteItem;
+           final route = nextItem;
            nextTime = route.time;
            
            String destName = 'Next Spot';
@@ -876,76 +982,410 @@ class TripCubit extends Cubit<TripState> {
       plainPlan: plainBody,
     );
   }
-  
-  
-  // 👇 新規追加: Stateなしで設定を直接読んで通知をセットアップ
-  Future<void> _syncNotificationsWithoutState() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    final isNotifyEnabled = prefs.getBool('isNotificationEnabled') ?? false;
-    final isOngoingEnabled = prefs.getBool('isOngoingNotificationEnabled') ?? true;
-    final isReminderEnabled = prefs.getBool('isReminderEnabled') ?? true;
-    final minutes = prefs.getInt('reminderMinutesBefore') ?? 15;
 
-    final dummySettings = SettingsState(
-      isNotificationEnabled: isNotifyEnabled,
-      isOngoingNotificationEnabled: isOngoingEnabled,
-      isReminderEnabled: isReminderEnabled,
-      reminderMinutesBefore: minutes,
+  // iOS用のLive Activity更新ロジック (新規追加)
+  Future<void> _updateIosLiveActivity(_TripStatusInfo info) async {
+    final currentItem = info.currentItem;
+    final nextItem = info.nextItem;
+    final now = DateTime.now();
+
+    String pattern = 'wait';
+    String title = '';
+    String subTitle = '';
+    String bottomInfo = '';
+    String iconName = 'clock';
+    double progress = 0.0;
+    int endTimeEpoch = 0;
+    String statusLabel = '';
+
+    // ==========================================
+    // A. 滞在中 (Stay)
+    // ==========================================
+    if (currentItem is ScheduledItem) {
+      pattern = 'stay';
+      title = currentItem.name;
+      
+      // Sub: 時間表示
+      final startStr = "${currentItem.time.hour}:${currentItem.time.minute.toString().padLeft(2, '0')}";
+      final endT = currentItem.time.add(Duration(minutes: currentItem.durationMinutes ?? 60));
+      final endStr = "${endT.hour}:${endT.minute.toString().padLeft(2, '0')}";
+      subTitle = "$startStr - $endStr";
+      endTimeEpoch = endT.millisecondsSinceEpoch;
+
+      // Bottom: 次の予定
+      if (nextItem != null) {
+        final nName = (nextItem is ScheduledItem) ? nextItem.name : 'Moving';
+        DateTime nTime;
+        if (nextItem is ScheduledItem) {
+          nTime = nextItem.time;
+        } else {
+          nTime = (nextItem as RouteItem).time;
+        }
+        final nTimeStr = "${nTime.hour}:${nTime.minute.toString().padLeft(2, '0')}";
+        bottomInfo = "Next: $nName ($nTimeStr)";
+      } else {
+        bottomInfo = "End of Day";
+      }
+
+      // Icon & Progress
+      iconName = currentItem.category.iconName; 
+      progress = _calculateProgress(now, currentItem.time, endT);
+      statusLabel = 'On Stay';
+    }
+
+    // ==========================================
+    // B. 移動中 (Move)
+    // ==========================================
+    else if (currentItem is RouteItem) {
+      final route = currentItem;
+      final routeEndTime = route.time.add(Duration(minutes: route.durationMinutes));
+      
+      // 共通: Progress & Status
+      progress = _calculateProgress(now, route.time, routeEndTime);
+      statusLabel = 'Moving';
+      
+      // 目的地名の取得 (destinationItemIdから検索)
+      String destinationName = 'Next Spot';
+      try {
+        final dest = state.scheduleItems.whereType<ScheduledItem>()
+                    .firstWhere((i) => i.id == route.destinationItemId);
+        destinationName = dest.name;
+      } catch (_) {}
+
+      // --- パターン分岐 ---
+
+      if (route.detailedSteps.isNotEmpty) {
+        // ------------------------------------------------
+        // B-1. 詳細あり (Move Detail)
+        // ------------------------------------------------
+        pattern = 'move_detail';
+        
+        // 現在のステップを特定
+        StepDetail? currentStep;
+        DateTime stepStartTime = route.time;
+        DateTime stepEndTime = route.time;
+        
+        int accumMinutes = 0;
+        final timeSinceStart = now.difference(route.time).inMinutes;
+
+        for (var step in route.detailedSteps) {
+          final stepDuration = step.durationMinutes;
+          if (timeSinceStart < accumMinutes + stepDuration) {
+            currentStep = step;
+            // 時刻計算 (手動計算)
+            stepStartTime = route.time.add(Duration(minutes: accumMinutes));
+            stepEndTime = stepStartTime.add(Duration(minutes: stepDuration));
+            break;
+          }
+          accumMinutes += stepDuration;
+        }
+        
+        // もし計算誤差で範囲外なら最後のステップにするか、ルート全体を表示する
+        if (currentStep == null) {
+          currentStep = route.detailedSteps.last;
+          stepStartTime = route.time.add(Duration(minutes: accumMinutes - (currentStep.durationMinutes)));
+          stepEndTime = routeEndTime;
+        }
+
+        // Title: 出発駅 → 到着駅 (なければDisplayName)
+        final depName = currentStep.departureStation;
+        final arrName = currentStep.arrivalStation;
+        
+        if (depName != null && arrName != null) {
+          title = "$depName → $arrName";
+        } else if (depName != null) {
+          title = "$depName →";
+        } else if (arrName != null) {
+          title = "→ $arrName";
+        } else {
+          // 駅名がない場合 (乗り物名や指示など)
+          title = currentStep.lineName ?? currentStep.transportType.displayName;
+        }
+
+        // SubTitle: ステップの開始時間 → 終了時間
+        // (StepDetailに指定時刻があれば優先、なければ計算値)
+        final sTime = currentStep.departureTime ?? stepStartTime;
+        final eTime = currentStep.arrivalTime ?? stepEndTime;
+        
+        final sStr = "${sTime.hour}:${sTime.minute.toString().padLeft(2, '0')}";
+        final eStr = "${eTime.hour}:${eTime.minute.toString().padLeft(2, '0')}";
+        subTitle = "$sStr - $eStr";
+        
+        // BottomInfo: 全体の予定 (Move To 目的地)
+        bottomInfo = "Move To $destinationName";
+        
+        // Icon
+        iconName = currentStep.transportType.iconName;
+        
+        // EndTimeEpoch (Dynamic Island用にはステップ終了時刻を渡すか、全体の終了時刻を渡すか)
+        // ここでは「今の作業(ステップ)の終了」を渡すのが自然
+        endTimeEpoch = eTime.millisecondsSinceEpoch;
+
+      } else {
+        // ------------------------------------------------
+        // B-2. 詳細なし (Move Simple)
+        // ------------------------------------------------
+        pattern = 'move_simple';
+        
+        // Title: 出発地 → 目的地
+        // 出発地(前のScheduledItem)を探す
+        final prevItem = _findPreviousScheduledItem(route);
+        final startName = prevItem?.name ?? 'Start';
+        
+        title = "$startName → $destinationName";
+        
+        // SubTitle: 全体の開始 → 終了
+        final sStr = "${route.time.hour}:${route.time.minute.toString().padLeft(2, '0')}";
+        final eStr = "${routeEndTime.hour}:${routeEndTime.minute.toString().padLeft(2, '0')}";
+        subTitle = "$sStr - $eStr";
+        
+        // BottomInfo: 次の予定 (Stayと同じロジック: Next: [Spot] ([Time]))
+        // move_simpleの場合、routeの次はdestinationItemであるはず
+        final nTimeStr = "${routeEndTime.hour}:${routeEndTime.minute.toString().padLeft(2, '0')}";
+        bottomInfo = "Next: $destinationName ($nTimeStr)";
+        
+        // Icon
+        iconName = route.transportType.iconName;
+        
+        endTimeEpoch = routeEndTime.millisecondsSinceEpoch;
+      }
+    }
+
+    // ==========================================
+    // C. 待機中 (Wait / Gap)
+    // ==========================================
+    else if (currentItem == null && nextItem != null) {
+      pattern = 'wait';
+      DateTime nextT;
+      if (nextItem is ScheduledItem) {
+        nextT = nextItem.time;
+      } else {
+        nextT = (nextItem as RouteItem).time;
+      }
+      endTimeEpoch = nextT.millisecondsSinceEpoch;
+      
+      title = "Free Time";
+      
+      final diff = nextT.difference(now).inMinutes;
+      subTitle = "Next in ${diff}min";
+      
+      final nName = (nextItem is ScheduledItem) ? nextItem.name : 'Move';
+      bottomInfo = "Next: $nName";
+      
+      iconName = 'hourglass';
+      progress = 1.0; 
+      statusLabel = 'Waiting';
+    }
+
+    // モデル生成して送信
+    final stateData = IosLiveActivityState(
+      pattern: pattern,
+      title: title,
+      subTitle: subTitle,
+      bottomInfo: bottomInfo,
+      iconName: iconName,
+      progress: progress,
+      endTimeEpoch: endTimeEpoch,
+      statusLabel: statusLabel,
     );
 
-    syncNotifications(dummySettings);
+    await NotificationService().updateLiveActivity(stateData);
   }
 
-  // 👇 新規追加: 起動時にアクティブな旅行を探して通知セット
-  Future<void> _checkAndSetupActiveTripNotification(List<Trip> trips) async {
-    final now = DateTime.now();
-    
-    Trip? activeTrip;
-    try {
-      activeTrip = trips.firstWhere((trip) {
-        final start = DateTime(trip.startDate.year, trip.startDate.month, trip.startDate.day);
-        final end = DateTime(trip.endDate.year, trip.endDate.month, trip.endDate.day, 23, 59, 59);
-        return now.isAfter(start) && now.isBefore(end);
-      });
-    } catch (_) {
-      activeTrip = null;
+  // --- Helpers ---
+
+  // RouteItemの直前にあるScheduledItemを探す
+  ScheduledItem? _findPreviousScheduledItem(RouteItem route) {
+    // 全アイテムを時刻順にソートしたリストを取得
+    final allItems = <dynamic>[
+      ...state.scheduleItems.whereType<ScheduledItem>(),
+      ...state.scheduleItems.whereType<RouteItem>(),
+    ]..sort((a, b) {
+        final timeA = (a is ScheduledItem) ? a.time : (a as RouteItem).time;
+        final timeB = (b is ScheduledItem) ? b.time : (b as RouteItem).time;
+        return timeA.compareTo(timeB);
+    });
+
+    final index = allItems.indexOf(route);
+    if (index > 0) {
+      final prev = allItems[index - 1];
+      if (prev is ScheduledItem) {
+        return prev;
+      } else if (prev is RouteItem) {
+        // もしRouteが連続している場合はさらに遡る（再帰またはループ）
+        // ここでは簡易的に一つ前がScheduledItemでなければnull(不明)とするか、
+        // あるいはもう一つ遡る実装にする。通常は交互に来るはず。
+        // 再帰探索:
+        return _findPreviousScheduledItem(prev);
+      }
     }
+    return null;
+  }
 
-    if (activeTrip != null) {
-      print('🚀 Active trip detected: ${activeTrip.title}');
-      try {
-        final scheduleItems = await _tripRepository.fetchFullSchedule(activeTrip.id);
-        
-        // 画面データとしてセットしておく (これで次回開いた時に早い)
-        emit(state.copyWith(
-          selectedTrip: activeTrip,
-          scheduleItems: scheduleItems as List<Object>,
-        ));
+  double _calculateProgress(DateTime now, DateTime start, DateTime end) {
+    final total = end.difference(start).inSeconds;
+    final current = now.difference(start).inSeconds;
+    if (total <= 0) return 1.0;
+    double p = current / total;
+    if (p < 0.0) return 0.0;
+    if (p > 1.0) return 1.0;
+    return p;
+  }
 
-        // 設定を読んで通知セット
-        await _syncNotificationsWithoutState();
+  // ----------------------------------------------------------------
+  // 4. ウィジェット
+  // ----------------------------------------------------------------
+
+  // ホーム画面ウィジェット用のデータを保存 (Full JSON版)
+  Future<void> _updateHomeWidget(_TripStatusInfo info) async {
+    final trip = info.trip;
+    final currentItem = info.currentItem;
+    final nextItem = info.nextItem;
+
+    if (trip == null) return;
+
+    // 1. 基本的な旅行情報
+    final Map<String, dynamic> widgetData = {
+      'tripId': trip.id,
+      'tripTitle': trip.title,
+      'updateTime': DateTime.now().millisecondsSinceEpoch,
+    };
+
+    // 2. 現在のステータス情報 (Current)
+    if (currentItem != null) {
+      if (currentItem is ScheduledItem) {
+        // --- 滞在 (Stay) ---
+        final endT = currentItem.time.add(Duration(minutes: currentItem.durationMinutes ?? 60));
+        widgetData['current'] = {
+          'type': 'stay',
+          'id': currentItem.id,
+          'title': currentItem.name,
+          'category': currentItem.category.name, // icon判定用
+          'startTime': currentItem.time.millisecondsSinceEpoch,
+          'endTime': endT.millisecondsSinceEpoch,
+          'notes': currentItem.notes ?? '', // メモ/予約詳細
+          'isTimeFixed': currentItem.isTimeFixed,
+        };
+      } else if (currentItem is RouteItem) {
+        // --- 移動 (Move) ---
+        final route = currentItem;
+        final endT = route.time.add(Duration(minutes: route.durationMinutes));
         
-      } catch (e) {
-        print('Background schedule fetch error: $e');
+        // 目的地名
+        String destName = 'Next Spot';
+        try {
+          final d = state.scheduleItems.whereType<ScheduledItem>()
+              .firstWhere((i) => i.id == route.destinationItemId);
+          destName = d.name;
+        } catch (_) {}
+
+        final Map<String, dynamic> moveData = {
+          'type': 'move',
+          'id': route.id,
+          'title': "Move to $destName", // Largeなどで使用
+          'destination': destName,
+          'transportType': route.transportType.name,
+          'startTime': route.time.millisecondsSinceEpoch,
+          'endTime': endT.millisecondsSinceEpoch,
+          'cost': route.cost,
+        };
+
+        // --- 詳細ステップ (Current Step & Next Step) ---
+        if (route.detailedSteps.isNotEmpty) {
+          final now = DateTime.now();
+          final timeSinceStart = now.difference(route.time).inMinutes;
+          
+          int accumMinutes = 0;
+          int currentStepIndex = -1;
+
+          // 今どのステップか特定
+          for (int i = 0; i < route.detailedSteps.length; i++) {
+            final step = route.detailedSteps[i];
+            final duration = step.durationMinutes ?? 0;
+            if (timeSinceStart < accumMinutes + duration) {
+              currentStepIndex = i;
+              break;
+            }
+            accumMinutes += duration;
+          }
+
+          // 今のステップ情報
+          if (currentStepIndex != -1) {
+            final currStep = route.detailedSteps[currentStepIndex];
+            moveData['currentStep'] = {
+              'instruction': currStep.displayInstruction, // "山手線", "Walk"
+              'transportType': currStep.transportType.name,
+              'depStation': currStep.departureStation ?? '',
+              'arrStation': currStep.arrivalStation ?? '',
+              'depTime': currStep.departureTime?.millisecondsSinceEpoch,
+              'arrTime': currStep.arrivalTime?.millisecondsSinceEpoch,
+              'lineName': currStep.lineName ?? '',
+              'bookingDetails': currStep.bookingDetails ?? "",
+              'cost': currStep.cost ?? "",
+            };
+
+            // 次のステップ情報 (あれば) -> 4x4などで「次は乗り換え」と出せる
+            if (currentStepIndex + 1 < route.detailedSteps.length) {
+              final nStep = route.detailedSteps[currentStepIndex + 1];
+              moveData['nextStep'] = {
+                'instruction': nStep.displayInstruction,
+                'transportType': nStep.transportType.name,
+                'depStation': nStep.departureStation ?? '',
+                'lineName': nStep.lineName ?? '',
+              };
+            }
+          }
+        }
+        widgetData['current'] = moveData;
       }
     } else {
-      NotificationService().cancelOngoingNotification();
+      // 予定なし (Free / Gap)
+      widgetData['current'] = {
+        'type': 'free',
+        'title': 'Free Time',
+      };
     }
+
+    // 3. 次の予定情報 (Next Plan)
+    if (nextItem != null) {
+      if (nextItem is ScheduledItem) {
+        widgetData['next'] = {
+          'type': 'stay',
+          'title': nextItem.name,
+          'startTime': nextItem.time.millisecondsSinceEpoch,
+          'category': nextItem.category.name,
+          'notes': nextItem.notes ?? '', // 次のメモも見れるように
+        };
+      } else if (nextItem is RouteItem) {
+         // 次が移動の場合
+         String nextDest = 'Spot';
+         try {
+            final d = state.scheduleItems.whereType<ScheduledItem>()
+                .firstWhere((i) => i.id == nextItem.destinationItemId);
+            nextDest = d.name;
+         } catch (_) {}
+
+         widgetData['next'] = {
+           'type': 'move',
+           'title': "Move to $nextDest",
+           'startTime': nextItem.time.millisecondsSinceEpoch,
+           'transportType': nextItem.transportType.name,
+         };
+      }
+    }
+
+    // JSONに変換して保存 (key: 'trip_widget_data')
+    final jsonString = jsonEncode(widgetData);
+    await HomeWidget.saveWidgetData<String>('trip_widget_data', jsonString);
+    
+    // ウィジェット更新
+    await HomeWidget.updateWidget(
+      name: 'TripWidget', 
+      iOSName: 'TripWidget',
+      qualifiedAndroidName: 'com.example.new_tripple.TripWidget',
+    );
   }
 
-
-  void _stopOngoingTimer() {
-    _ongoingTimer?.cancel();
-    _ongoingTimer = null;
-  }
-  
-  @override
-  Future<void> close() {
-    _stopOngoingTimer();
-    _authSubscription?.cancel();
-    return super.close();
-  }
 
   // ----------------------------------------------------------------
   // 4. Private Helpers: 共通ロジック
@@ -1208,4 +1648,13 @@ class TripCubit extends Cubit<TripState> {
       emit(state.copyWith(status: TripStatus.error, errorMessage: e.toString()));
     }
   } 
+}
+
+// 計算結果をまとめるクラス
+class _TripStatusInfo {
+  final dynamic currentItem; // ScheduledItem or RouteItem
+  final dynamic nextItem;
+  final Trip? trip;
+
+  _TripStatusInfo(this.currentItem, this.nextItem, this.trip);
 }
